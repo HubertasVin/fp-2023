@@ -61,6 +61,8 @@ main = hspec $ do
       Lib2.parseStatement "select * from employees where id is 1" `shouldSatisfy` isLeft
     it "Handles incorrect where syntax" $ do
       Lib2.parseStatement "select * from employees where" `shouldSatisfy` isLeft
+    it "Handles update" $ do
+      Lib2.parseStatement "update employees set id = 6 name = \"Ka\" surname = \"Mi\" where name = \"Vi\"" `shouldSatisfy` isLeft
   describe "Lib2.executeStatement" $ do
     it "Returns the SHOW TABLES dataframe correctly" $ do
       Lib2.executeStatement ShowTables `shouldBe` Right (DataFrame [Column "tables" StringType] [[StringValue "employees"], [StringValue "invalid1"], [StringValue "invalid2"], [StringValue "long_strings"], [StringValue "flags"]])

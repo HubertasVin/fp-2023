@@ -29,6 +29,7 @@ data ParsedStatement
   = ShowTables
   | ShowTable TableName
   | Select [String] TableName (Maybe [Operator])
+  | Update TableName [(String, Value)] (Maybe [Operator])
   | Now
   | ParsedStatement
   | Where [Operator]
@@ -58,6 +59,13 @@ parseStatement input
                     else Right (Select cols tableName (Just conditions))
                 (cols, "from" : tableName : _) -> Right (Select cols tableName Nothing)
                 _ -> Left "Invalid SELECT statement"
+            "update" : table : rest ->
+              case dropWhile (/= "set") rest of
+                "set" : assignments -> do
+                  (values, remaining) <- parseUpdateAssignments assignments
+                  (conditions, _) <- parseWhereConditions remaining
+                  Right (Update table values (Just conditions))
+                _ -> Left "Invalid UPDATE statement"
             _ -> Left "Not supported statement"
 
 replaceKeywordsToLower :: [String] -> [String]
@@ -69,10 +77,32 @@ replaceKeywordsToLower = map replaceKeyword
       | otherwise = keyword
 
 keywordsList :: [String]
-keywordsList = ["show", "table", "tables", "select", "from", "where", "and", "or", "not", "now", "min", "sum"]
+keywordsList = ["show", "table", "tables", "select", "from", "where", "and", "or", "not", "now", "min", "sum", "update", "set"]
 
 toLowerPrefix :: String -> String -> Bool
 toLowerPrefix prefix str = map toLower prefix `isPrefixOf` map toLower str
+
+parseValue :: String -> Either ErrorMessage Value
+parseValue s 
+  | head s == '\"' = Right $ StringValue (init (tail s))
+  | otherwise =
+    case readMaybe s of
+      Just intValue -> Right (IntegerValue intValue)
+      Nothing ->
+        case map toLower s of
+          "true" -> Right (BoolValue True)
+          "false" -> Right (BoolValue False)
+          "null" -> Right NullValue
+          _ -> Left $"Invalid value" ++ s
+
+parseUpdateAssignments :: [String] -> Either ErrorMessage ([(String, Value)], [String])
+parseUpdateAssignments [] = Left "Invalid UPDATE statement"
+parseUpdateAssignments ("where" : rest) = Right ([], rest)
+parseUpdateAssignments (colName : "=" : value : rest) = do
+  (assignments, remaining) <- parseUpdateAssignments rest
+  parsedValue <- parseValue value
+  Right ((colName, parsedValue) : assignments, remaining)
+parseUpdateAssignments _ = Left "Invalid UPDATE statement"
 
 parseWhereConditions :: [String] -> Either ErrorMessage ([Operator], [String])
 -- parseWhereConditions [] = Left "Invalid WHERE statement"
