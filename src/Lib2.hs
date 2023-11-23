@@ -29,6 +29,7 @@ data ParsedStatement
   = ShowTables
   | ShowTable TableName
   | Select [String] TableName (Maybe [Operator])
+  | Now
   | ParsedStatement
   | Where [Operator]
   deriving (Show, Eq)
@@ -60,20 +61,15 @@ parseStatement input
             _ -> Left "Not supported statement"
 
 replaceKeywordsToLower :: [String] -> [String]
-replaceKeywordsToLower replaceInput = map replaceKeyword replaceInput
+replaceKeywordsToLower = map replaceKeyword
   where
     replaceKeyword :: String -> String
     replaceKeyword keyword
-      | keyword == getKeywordCaseSensitive "show" replaceInput = "show"
-      | keyword == getKeywordCaseSensitive "table" replaceInput = "table"
-      | keyword == getKeywordCaseSensitive "tables" replaceInput = "tables"
-      | keyword == getKeywordCaseSensitive "select" replaceInput = "select"
-      | keyword == getKeywordCaseSensitive "from" replaceInput = "from"
-      | keyword == getKeywordCaseSensitive "where" replaceInput = "where"
-      | keyword == getKeywordCaseSensitive "and" replaceInput = "and"
-      | keyword == getKeywordCaseSensitive "or" replaceInput = "or"
-      | keyword == getKeywordCaseSensitive "not" replaceInput = "not"
+      | map toLower keyword `elem` keywordsList = map toLower keyword
       | otherwise = keyword
+
+keywordsList :: [String]
+keywordsList = ["show", "table", "tables", "select", "from", "where", "and", "or", "not", "now", "min", "sum"]
 
 toLowerPrefix :: String -> String -> Bool
 toLowerPrefix prefix str = map toLower prefix `isPrefixOf` map toLower str
@@ -196,91 +192,6 @@ collectStringValue [] = ("", [])
 collectStringValue (x : xs)
   | last x == '\"' = (x, xs)
   | otherwise = let (value, remaining) = collectStringValue xs in (x ++ " " ++ value, remaining)
-
-{- parseWhereConditions (colName : op : value : rest) =
-  case op of
-    "=" -> case readMaybe value of
-      Just intValue -> do
-        (operators, remaining) <- parseWhereConditions rest
-        Right (Operator colName "=" (IntegerValue intValue) : operators, remaining)
-      Nothing -> case value of
-        "True" -> do
-          (operators, remaining) <- parseWhereConditions rest
-          Right (Operator colName "=" (BoolValue True) : operators, remaining)
-        "False" -> do
-          (operators, remaining) <- parseWhereConditions rest
-          Right (Operator colName "=" (BoolValue False) : operators, remaining)
-        "NULL" -> do
-          (operators, remaining) <- parseWhereConditions rest
-          Right (Operator colName "=" NullValue : operators, remaining)
-        _ -> do
-          (operators, remaining) <- parseWhereConditions rest
-          Right (Operator colName "=" (StringValue value) : operators, remaining)
-    "/=" -> case readMaybe value of
-      Just intValue -> do
-        (operators, remaining) <- parseWhereConditions rest
-        Right (Operator colName "/=" (IntegerValue intValue) : operators, remaining)
-      Nothing -> case value of
-        "true" -> do
-          (operators, remaining) <- parseWhereConditions rest
-          Right (Operator colName "/=" (BoolValue True) : operators, remaining)
-        "false" -> do
-          (operators, remaining) <- parseWhereConditions rest
-          Right (Operator colName "/=" (BoolValue False) : operators, remaining)
-        "null" -> do
-          (operators, remaining) <- parseWhereConditions rest
-          Right (Operator colName "/=" NullValue : operators, remaining)
-        _ -> do
-          (operators, remaining) <- parseWhereConditions rest
-          Right (Operator colName "/=" (StringValue value) : operators, remaining)
-    "<>" -> case readMaybe value of
-      Just intValue -> do
-        (operators, remaining) <- parseWhereConditions rest
-        Right (Operator colName "<>" (IntegerValue intValue) : operators, remaining)
-      Nothing -> case value of
-        "true" -> do
-          (operators, remaining) <- parseWhereConditions rest
-          Right (Operator colName "<>" (BoolValue True) : operators, remaining)
-        "false" -> do
-          (operators, remaining) <- parseWhereConditions rest
-          Right (Operator colName "<>" (BoolValue False) : operators, remaining)
-        "null" -> do
-          (operators, remaining) <- parseWhereConditions rest
-          Right (Operator colName "<>" NullValue : operators, remaining)
-        _ -> do
-          (operators, remaining) <- parseWhereConditions rest
-          Right (Operator colName "<>" (StringValue value) : operators, remaining)
-    "<" -> case readMaybe value of
-      Just intValue -> do
-        (operators, remaining) <- parseWhereConditions rest
-        Right (Operator colName "<" (IntegerValue intValue) : operators, remaining)
-      Nothing -> do
-        (operators, remaining) <- parseWhereConditions rest
-        Right (Operator colName "<" (StringValue value) : operators, remaining)
-    ">" -> case readMaybe value of
-      Just intValue -> do
-        (operators, remaining) <- parseWhereConditions rest
-        Right (Operator colName ">" (IntegerValue intValue) : operators, remaining)
-      Nothing -> do
-        (operators, remaining) <- parseWhereConditions rest
-        Right (Operator colName ">" (StringValue value) : operators, remaining)
-    "<=" -> case readMaybe value of
-      Just intValue -> do
-        (operators, remaining) <- parseWhereConditions rest
-        Right (Operator colName "<=" (IntegerValue intValue) : operators, remaining)
-      Nothing -> do
-        (operators, remaining) <- parseWhereConditions rest
-        Right (Operator colName "<=" (StringValue value) : operators, remaining)
-    ">=" -> case readMaybe value of
-      Just intValue -> do
-        (operators, remaining) <- parseWhereConditions rest
-        Right (Operator colName ">=" (IntegerValue intValue) : operators, remaining)
-      Nothing -> do
-        (operators, remaining) <- parseWhereConditions rest
-        Right (Operator colName ">=" (StringValue value) : operators, remaining)
-    _ -> Left "Invalid operator"
--- parseWhereConditions (_ : _) = Left "Invalid WHERE statement"
-parseWhereConditions _ = Right ([], []) -}
 
 -- Executes a parsed statemet. Produces a DataFrame. Uses
 -- InMemoryTables.databases a source of data.

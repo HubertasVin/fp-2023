@@ -8,8 +8,9 @@ module Lib3
 where
 
 import Control.Monad.Free (Free (..), liftF)
-import DataFrame (DataFrame)
 import Data.Time ( UTCTime )
+import Lib2
+import DataFrame
 
 type TableName = String
 type FileContent = String
@@ -30,5 +31,15 @@ getTime :: Execution UTCTime
 getTime = liftF $ GetTime id
 
 executeSql :: String -> Execution (Either ErrorMessage DataFrame)
-executeSql sql = do
-    return $ Left "implement me"
+executeSql sql = case parseStatement sql of
+  Left err -> return $ Left err
+  Right statement -> do
+    case statement of
+      Now -> do
+        currentTime <- getTime
+        return $ Right $ DataFrame [Column "CurrentTime" StringType] [[StringValue (show currentTime)]]
+      _ -> do
+        let result = executeStatement statement
+        return $ case result of
+          Left err -> Left err
+          Right df -> Right df

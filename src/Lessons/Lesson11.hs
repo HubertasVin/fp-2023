@@ -2,7 +2,7 @@
 
 module Lessons.Lesson11 () where
 
-import Control.Monad.Trans.State.Strict (State, StateT, get, put, runState, runStateT)
+{- import Control.Monad.Trans.State.Strict (State, StateT, get, put, runState, runStateT)
 import Control.Monad.Trans.Class(lift, MonadTrans)
 import Control.Monad.IO.Class(liftIO, MonadIO)
 import GHC.RTS.Flags (MiscFlags(installSEHHandlers))
@@ -160,3 +160,4 @@ calc2 = do
 --   v1 <- parseChar c
 --   v2 <- parseChar c
 --   return (v1, v2)
+ -}
