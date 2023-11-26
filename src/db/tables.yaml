@@ -1,0 +1,4 @@
+- tables: 
+    - name: employees
+    - name: employers
+    - name: flags

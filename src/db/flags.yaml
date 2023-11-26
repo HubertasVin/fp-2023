@@ -1,0 +1,11 @@
+- table: flags
+  columns:
+    - name: flag
+      type: StringType
+    - name: value
+      type: BoolType
+  rows:
+    - [a, true]
+    - [b, true]
+    - [b, null]
+    - [b, false]
