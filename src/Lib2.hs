@@ -32,7 +32,7 @@ data ParsedStatement
   | Update TableName [(String, Value)] (Maybe [Operator])
   | Insert TableName [String]
   | Delete TableName (Maybe [Operator])
-  | Now
+  | Now [String] TableName (Maybe [Operator])
   | ParsedStatement
   | Where [Operator]
   deriving (Show, Eq)
@@ -54,13 +54,19 @@ parseStatement input
             ["show", "table", table] -> Right (ShowTable table)
             ("select" : columns) ->
               case break (== "from") columns of
-                (cols, "from" : tableName : "where" : rest) -> do
-                  (conditions, _) <- parseWhereConditions rest
-                  if null conditions
-                    then Left "Invalid WHERE statement"
-                    else Right (Select cols tableName (Just conditions))
-                (cols, "from" : tableName : _) -> Right (Select cols tableName Nothing)
-                _ -> Left "Invalid SELECT statement"
+                  (cols, "from" : tableName : "where" : rest) -> do
+                      (conditions, _) <- parseWhereConditions rest
+                      if null conditions
+                          then Left "Invalid WHERE statement"
+                          else
+                              if not (null cols) && "now(" `toLowerPrefix` head cols
+                                  then Right (Now cols tableName (Just conditions))
+                                  else Right (Select cols tableName (Just conditions))
+                  (cols, "from" : tableName : _) ->
+                      if not (null cols) && "now(" `toLowerPrefix` head cols
+                          then Right (Now cols tableName Nothing)
+                          else Right (Select cols tableName Nothing)
+                  _ -> Left "Invalid SELECT statement"
             "update" : table : rest ->
               case dropWhile (/= "set") rest of
                 "set" : assignments -> do

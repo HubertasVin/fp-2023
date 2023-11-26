@@ -50,21 +50,19 @@ getTableDfByName tableName tables = liftF $ GetTableDfByName tableName tables id
 getTime :: Execution UTCTime
 getTime = liftF $ GetTime id
 
-
-
-
-
--- Execute SQL
 executeSql :: String -> Execution (Either ErrorMessage DataFrame)
-executeSql sql = do
-  tableNamesFileContent <- loadFile "db/tables.yaml"
-  let yamlData = parseYaml tableNamesFileContent
-  let tableNames = extractTableNames yamlData
-  tableContents <- loadFilesWithModifiedNames tableNames
-  return $ Left "Not implemented yet"
-
-
-
+executeSql sql = case parseStatement sql of
+  Left err -> return $ Left err
+  Right statement -> do
+    case statement of
+      (Now columnNames tableName maybeOperator) -> do
+        currentTime <- getTime
+        return $ Right $ DataFrame [Column "CurrentTime" StringType] [[StringValue (show currentTime)]]
+      _ -> do
+        let result = executeStatement statement
+        return $ case result of
+          Left err -> Left err
+          Right df -> Right df
 
 -- TODO Convert Yaml string to Table
 -- Load file with modified table names
