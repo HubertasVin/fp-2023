@@ -28,7 +28,7 @@ data Operator = Operator String String Value deriving (Show, Eq)
 data ParsedStatement
   = ShowTables
   | ShowTable TableName
-  | Select [String] TableName (Maybe [Operator])
+  | Select [String] [TableName] (Maybe [Operator]) (Maybe String)  -- Changed to [TableName]
   | ParsedStatement
   | Where [Operator]
   deriving (Show, Eq)
@@ -37,27 +37,48 @@ instance Ord Value where
   compare (StringValue s1) (StringValue s2) = compare s1 s2
   compare _ _ = EQ -- Handle other Value constructors, e.g., handle Null or other types
 
--- Parses user input into an entity representing a parsed
--- statement
 parseStatement :: String -> Either ErrorMessage ParsedStatement
 parseStatement input
   | null input = Left "Empty input"
   | last input == ';' = parseStatement (init input)
   | otherwise =
       let parseableList = replaceKeywordsToLower (splitStringIntoWords input)
-       in case parseableList of
+      in case parseableList of
             ["show", "tables"] -> Right ShowTables
             ["show", "table", table] -> Right (ShowTable table)
             ("select" : columns) ->
               case break (== "from") columns of
-                (cols, "from" : tableName : "where" : rest) -> do
-                  (conditions, _) <- parseWhereConditions rest
-                  if null conditions
-                    then Left "Invalid WHERE statement"
-                    else Right (Select cols tableName (Just conditions))
-                (cols, "from" : tableName : _) -> Right (Select cols tableName Nothing)
+                (cols, "from" : rest) ->
+                  let splitCols = splitCommaSeparated (unwords cols)
+                      (tableNames, conditionsPart) = break (== "where") rest
+                      tableNameList = splitCommaSeparated (unwords tableNames)
+                  in case conditionsPart of
+                    ("where" : whereClause) ->
+                      let (joinCondition, remainingWhereClause) = parseJoinCondition whereClause
+                      in if null remainingWhereClause
+                         then Right (Select splitCols tableNameList Nothing joinCondition)
+                         else do
+                           (conditions, _) <- parseWhereConditions remainingWhereClause
+                           if null conditions
+                             then Left "Invalid WHERE statement"
+                             else Right (Select splitCols tableNameList (Just conditions) joinCondition)
+                    _ -> Right (Select splitCols tableNameList Nothing Nothing)
                 _ -> Left "Invalid SELECT statement"
             _ -> Left "Not supported statement"
+
+splitCommaSeparated :: String -> [String]
+splitCommaSeparated str = map trimWhitespace $ splitOnComma str
+  where
+    splitOnComma = words . map (\c -> if c == ',' then ' ' else c)
+    trimSpace = f . f
+      where f = reverse . dropWhile isSpace
+
+
+parseJoinCondition :: [String] -> (Maybe String, [String])
+parseJoinCondition whereClause =
+    case whereClause of
+      (col1 : "=" : col2 : rest) -> (Just (unwords [col1, "=", col2]), rest)
+      _ -> (Nothing, whereClause)
 
 replaceKeywordsToLower :: [String] -> [String]
 replaceKeywordsToLower replaceInput = map replaceKeyword replaceInput
@@ -130,8 +151,11 @@ parseWhereConditions (colName : op : value : rest)
             "NULL" -> do
               (operators, remaining) <- parseWhereConditions rest
               Right (Operator colName "=" NullValue : operators, remaining)
-            _ -> do
-              Left "Strings should be surrounded by double quotes"
+            _ -> if isLikelyColumnName value 
+                 then do
+                   (operators, remaining) <- parseWhereConditions rest
+                   Right (Operator colName "=" (StringValue value) : operators, remaining)
+                 else Left "Strings should be surrounded by double quotes1"
         "/=" -> case readMaybe value of
           Just intValue -> do
             (operators, remaining) <- parseWhereConditions rest
@@ -197,90 +221,6 @@ collectStringValue (x : xs)
   | last x == '\"' = (x, xs)
   | otherwise = let (value, remaining) = collectStringValue xs in (x ++ " " ++ value, remaining)
 
-{- parseWhereConditions (colName : op : value : rest) =
-  case op of
-    "=" -> case readMaybe value of
-      Just intValue -> do
-        (operators, remaining) <- parseWhereConditions rest
-        Right (Operator colName "=" (IntegerValue intValue) : operators, remaining)
-      Nothing -> case value of
-        "True" -> do
-          (operators, remaining) <- parseWhereConditions rest
-          Right (Operator colName "=" (BoolValue True) : operators, remaining)
-        "False" -> do
-          (operators, remaining) <- parseWhereConditions rest
-          Right (Operator colName "=" (BoolValue False) : operators, remaining)
-        "NULL" -> do
-          (operators, remaining) <- parseWhereConditions rest
-          Right (Operator colName "=" NullValue : operators, remaining)
-        _ -> do
-          (operators, remaining) <- parseWhereConditions rest
-          Right (Operator colName "=" (StringValue value) : operators, remaining)
-    "/=" -> case readMaybe value of
-      Just intValue -> do
-        (operators, remaining) <- parseWhereConditions rest
-        Right (Operator colName "/=" (IntegerValue intValue) : operators, remaining)
-      Nothing -> case value of
-        "true" -> do
-          (operators, remaining) <- parseWhereConditions rest
-          Right (Operator colName "/=" (BoolValue True) : operators, remaining)
-        "false" -> do
-          (operators, remaining) <- parseWhereConditions rest
-          Right (Operator colName "/=" (BoolValue False) : operators, remaining)
-        "null" -> do
-          (operators, remaining) <- parseWhereConditions rest
-          Right (Operator colName "/=" NullValue : operators, remaining)
-        _ -> do
-          (operators, remaining) <- parseWhereConditions rest
-          Right (Operator colName "/=" (StringValue value) : operators, remaining)
-    "<>" -> case readMaybe value of
-      Just intValue -> do
-        (operators, remaining) <- parseWhereConditions rest
-        Right (Operator colName "<>" (IntegerValue intValue) : operators, remaining)
-      Nothing -> case value of
-        "true" -> do
-          (operators, remaining) <- parseWhereConditions rest
-          Right (Operator colName "<>" (BoolValue True) : operators, remaining)
-        "false" -> do
-          (operators, remaining) <- parseWhereConditions rest
-          Right (Operator colName "<>" (BoolValue False) : operators, remaining)
-        "null" -> do
-          (operators, remaining) <- parseWhereConditions rest
-          Right (Operator colName "<>" NullValue : operators, remaining)
-        _ -> do
-          (operators, remaining) <- parseWhereConditions rest
-          Right (Operator colName "<>" (StringValue value) : operators, remaining)
-    "<" -> case readMaybe value of
-      Just intValue -> do
-        (operators, remaining) <- parseWhereConditions rest
-        Right (Operator colName "<" (IntegerValue intValue) : operators, remaining)
-      Nothing -> do
-        (operators, remaining) <- parseWhereConditions rest
-        Right (Operator colName "<" (StringValue value) : operators, remaining)
-    ">" -> case readMaybe value of
-      Just intValue -> do
-        (operators, remaining) <- parseWhereConditions rest
-        Right (Operator colName ">" (IntegerValue intValue) : operators, remaining)
-      Nothing -> do
-        (operators, remaining) <- parseWhereConditions rest
-        Right (Operator colName ">" (StringValue value) : operators, remaining)
-    "<=" -> case readMaybe value of
-      Just intValue -> do
-        (operators, remaining) <- parseWhereConditions rest
-        Right (Operator colName "<=" (IntegerValue intValue) : operators, remaining)
-      Nothing -> do
-        (operators, remaining) <- parseWhereConditions rest
-        Right (Operator colName "<=" (StringValue value) : operators, remaining)
-    ">=" -> case readMaybe value of
-      Just intValue -> do
-        (operators, remaining) <- parseWhereConditions rest
-        Right (Operator colName ">=" (IntegerValue intValue) : operators, remaining)
-      Nothing -> do
-        (operators, remaining) <- parseWhereConditions rest
-        Right (Operator colName ">=" (StringValue value) : operators, remaining)
-    _ -> Left "Invalid operator"
--- parseWhereConditions (_ : _) = Left "Invalid WHERE statement"
-parseWhereConditions _ = Right ([], []) -}
 
 -- Executes a parsed statemet. Produces a DataFrame. Uses
 -- InMemoryTables.databases a source of data.
@@ -291,41 +231,100 @@ executeStatement (ShowTable tablename) =
   case lookup tablename database of
     Just df -> Right $ DataFrame [Column "columns" StringType] (map (\col -> [StringValue (getColumnName col)]) (getColumns df))
     Nothing -> Left "Table not found"
-executeStatement (Select columnNames tableName maybeOperator)
+executeStatement (Select columnNames tableNames maybeOperator maybeJoinCondition)
   | null columnNames = Left "No columns provided"
-  | null tableName = Left "No table provided"
-  | (("min(" `toLowerPrefix` head columnNames || "sum(" `toLowerPrefix` head columnNames) && null (tail columnNames)) || not ("min(" `toLowerPrefix` head columnNames || "sum(" `toLowerPrefix` head columnNames) = case lookup tableName database of
-      Just df -> do
+  | null tableNames = Left "No table provided"
+  | (("min(" `toLowerPrefix` head columnNames || "sum(" `toLowerPrefix` head columnNames) && not (null (tail columnNames))) = Left "Cannot use aggregate functions with multiple columns"
+  | otherwise = case mapM (`lookup` database) tableNames of
+      Just dfs -> do
+        let mergedDF = mergeDataFrames tableNames dfs
+        let finalDF = case maybeJoinCondition of
+                        Just joinCondition -> joinTablesOnCondition mergedDF joinCondition
+                        Nothing -> mergedDF
         let pureColumnNames = map extractColumnNameFromFunction columnNames
-        let missingColumns = filter (\colName -> not (any (\col -> getColumnName col == colName) (getColumns df))) pureColumnNames
-        if not (null missingColumns) && head pureColumnNames /= "*" -- Check if all columns inputed exist
+        let missingColumns = filter (\colName -> not (any (\col -> getColumnName col == colName) (getColumns finalDF))) pureColumnNames
+        if not (null missingColumns) && head pureColumnNames /= "*"
           then Left ("Column not found: " ++ unwords missingColumns)
           else Right ()
         let filteredDataFrame = case maybeOperator of
-              Just operators -> filterDataFrameByOperators operators df -- WHERE clause
-              Nothing -> df -- No WHERE clause
+              Just operators -> filterDataFrameByOperators operators finalDF
+              Nothing -> finalDF
         let filteredRows = getRows filteredDataFrame
-        let colIndex =
-              if "min(" `toLowerPrefix` head columnNames || "sum(" `toLowerPrefix` head columnNames
-                then columnIndex df (Column (head columnNames) StringType)
-                else -1
+        let colIndex = if "min(" `toLowerPrefix` head columnNames || "sum(" `toLowerPrefix` head columnNames
+                        then columnIndex finalDF (Column (head columnNames) StringType)
+                        else -1
         let selectedCols
-              | "min(" `toLowerPrefix` head columnNames = [Column "minimum" (columnType (getColumns df !! colIndex))]
-              | "sum(" `toLowerPrefix` head columnNames = [Column "sum" (columnType (getColumns df !! colIndex))]
-              | "*" `elem` columnNames = getColumns df
-              | otherwise = filter (\col -> getColumnName col `elem` columnNames) (getColumns df)
-        let selectedIndices = map (columnIndex df) selectedCols
+              | "min(" `toLowerPrefix` head columnNames = [Column "minimum" (columnType (getColumns finalDF !! colIndex))]
+              | "sum(" `toLowerPrefix` head columnNames = [Column "sum" (columnType (getColumns finalDF !! colIndex))]
+              | "*" `elem` columnNames = getColumns finalDF
+              | otherwise = filter (\col -> getColumnName col `elem` columnNames) (getColumns finalDF)
+        let selectedIndices = map (columnIndex finalDF) selectedCols
         let minValResult = case filteredRows of
               [] -> NullValue
-              _ -> foldl1 (minValue colIndex (columnType (getColumns df !! colIndex))) (map (!! colIndex) filteredRows)
+              _ -> foldl1 (minValue colIndex (columnType (getColumns finalDF !! colIndex))) (map (!! colIndex) filteredRows)
         let selectedRows
               | getColumnName (head selectedCols) == "minimum" = [[minValResult]]
               | getColumnName (head selectedCols) == "sum" = [[calculateSum colIndex filteredRows]]
               | otherwise = map (\row -> map (row !!) selectedIndices) filteredRows
         Right $ DataFrame selectedCols selectedRows
-      Nothing -> Left "Table not found"
-  | otherwise = Left "Cannot use agregate functions with multiple columns"
+      Nothing -> Left "One or more tables not found"
 executeStatement _ = Left "Not implemented"
+
+
+mergeDataFrames :: [TableName] -> [DataFrame] -> DataFrame
+mergeDataFrames tableNames dfs
+    | length dfs == 1 = head dfs
+    | otherwise =
+        let prefixedDataFrames = zipWith prefixDataFrame tableNames dfs
+            mergedDataFrame = foldl1 mergeTwoDataFrames prefixedDataFrames
+        in mergedDataFrame
+
+prefixDataFrame :: TableName -> DataFrame -> DataFrame
+prefixDataFrame tableName df =
+    let prefixColumn (Column name colType) = Column (tableName ++ "." ++ name) colType
+        prefixedColumns = map prefixColumn (getColumns df)
+    in DataFrame prefixedColumns (getRows df)
+
+mergeTwoDataFrames :: DataFrame -> DataFrame -> DataFrame
+mergeTwoDataFrames df1 df2 =
+    let newColumns = getColumns df1 ++ getColumns df2
+        newRows = [row1 ++ row2 | row1 <- getRows df1, row2 <- getRows df2]
+    in DataFrame newColumns newRows
+
+
+joinTablesOnCondition :: DataFrame -> String -> DataFrame
+joinTablesOnCondition mergedDF joinCondition =
+    let (maybeCondition, _) = parseJoinCondition (words joinCondition)
+        (col1, col2) = case maybeCondition of
+                      Just cond -> parseJoinConditionParts cond
+                      Nothing -> error "Invalid join condition format"
+        filteredRows = filterRowsByJoinCondition mergedDF col1 col2
+        col2Index = columnIndex mergedDF (Column col2 StringType)
+        columnsWithoutRedundant = removeRedundantColumn (getColumns mergedDF) col2
+        adjustedRows = map (removeElementAt col2Index) filteredRows
+    in DataFrame columnsWithoutRedundant adjustedRows
+
+removeElementAt :: Int -> [a] -> [a]
+removeElementAt idx xs = let (left, (_:right)) = splitAt idx xs in left ++ right
+
+
+removeRedundantColumn :: [Column] -> String -> [Column]
+removeRedundantColumn columns colToRemove =
+    filter (\(Column name _) -> name /= colToRemove) columns
+
+parseJoinConditionParts :: String -> (String, String)
+parseJoinConditionParts condition =
+    case words condition of
+        [col1, "=", col2] -> (col1, col2)
+        _ -> error "Invalid join condition format"
+
+
+filterRowsByJoinCondition :: DataFrame -> String -> String -> [Row]
+filterRowsByJoinCondition df col1Name col2Name =
+    let col1Index = columnIndex df (Column col1Name StringType) -- Modify as per your ColumnType
+        col2Index = columnIndex df (Column col2Name StringType)
+        filteredRows = filter (\row -> row !! col1Index == row !! col2Index) (getRows df)
+    in filteredRows
 
 extractColumnNameFromFunction :: String -> String
 extractColumnNameFromFunction columnName
@@ -354,7 +353,15 @@ selectRow df selectedCols row = map (\col -> row !! columnIndex df col) selected
 
 evalCondition :: String -> String -> Value -> DataFrame -> Row -> Bool
 -- evalCondition "and" colName val df row = any (\cond -> evalCondition cond df row) conditions
-evalCondition colName "=" val df row = matchValue (getColumnValue colName df row) val
+evalCondition colName "=" val df row = 
+    case val of
+        StringValue otherColName 
+            | isLikelyColumnName otherColName -> 
+                let val1 = getColumnValue colName df row
+                    val2 = getColumnValue otherColName df row
+                in val1 == val2
+            | otherwise -> matchValue (getColumnValue colName df row) val
+        _ -> matchValue (getColumnValue colName df row) val
 evalCondition colName "/=" val df row = not (matchValue (getColumnValue colName df row) val)
 evalCondition colName "<>" val df row = not (matchValue (getColumnValue colName df row) val)
 evalCondition colName "<" val df row = compareValues (<) colName val df row
@@ -479,3 +486,6 @@ isPrefixCaseInsensitive :: String -> String -> Bool
 isPrefixCaseInsensitive [] _ = True
 isPrefixCaseInsensitive _ [] = False
 isPrefixCaseInsensitive (a : as) (b : bs) = toLower a == toLower b && isPrefixCaseInsensitive as bs
+
+isLikelyColumnName :: String -> Bool
+isLikelyColumnName str = not (any (`elem` "\"0123456789") (take 1 str))
