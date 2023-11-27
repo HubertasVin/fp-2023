@@ -1,5 +1,6 @@
 module InMemoryTables
   ( tableEmployees,
+    tableEmployeessalary,
     tableInvalid1,
     tableInvalid2,
     tableLongStrings,
@@ -22,6 +23,18 @@ tableEmployees =
         [IntegerValue 2, StringValue "Ed", StringValue "Dl"],
         [IntegerValue 3, StringValue "Hu", StringValue "Vi"],
         [IntegerValue 4, StringValue "Pa", StringValue "Dl"]
+      ]
+  )
+
+tableEmployeessalary :: (TableName, DataFrame)
+tableEmployeessalary =
+  ( "employeesSalary",
+    DataFrame
+      [Column "id" IntegerType, Column "salary" StringType]
+      [ [IntegerValue 1, StringValue "900"],
+        [IntegerValue 2, StringValue "300"],
+        [IntegerValue 3, StringValue "400"],
+        [IntegerValue 4, StringValue "1000"]
       ]
   )
 
@@ -82,4 +95,4 @@ tableWithNulls =
   )
 
 database :: [(TableName, DataFrame)]
-database = [tableEmployees, tableInvalid1, tableInvalid2, tableLongStrings, tableWithNulls]
+database = [tableEmployees, tableEmployeessalary, tableInvalid1, tableInvalid2, tableLongStrings, tableWithNulls]
