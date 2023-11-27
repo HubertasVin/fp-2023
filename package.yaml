@@ -111,6 +111,7 @@ tests:
     dependencies:
     - time
     - yaml
+    - free
     - vector
     - unordered-containers
     - text
