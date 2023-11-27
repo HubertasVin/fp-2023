@@ -248,10 +248,10 @@ collectStringValue (x : xs)
 -- ExecuteStatement function
 executeStatement :: ParsedStatement -> Database -> Either ErrorMessage DataFrame
 executeStatement ShowTables database = Right $ showTables database
-executeStatement (ShowTable tablename) database =
-  case lookup tablename database of
+executeStatement (ShowTable tableName) database =
+  case lookup tableName database of
     Just df -> Right $ DataFrame [Column "columns" StringType] (map (\col -> [StringValue (getColumnName col)]) (getColumns df))
-    Nothing -> Left "Table not found"
+    Nothing -> Left $ "Table not found: " ++ tableName
 executeStatement (Select columnNames tableName maybeOperator) database
   | null columnNames = Left "No columns provided"
   | null tableName = Left "No table provided"
@@ -284,24 +284,24 @@ executeStatement (Select columnNames tableName maybeOperator) database
               | getColumnName (head selectedCols) == "sum" = [[calculateSum colIndex filteredRows]]
               | otherwise = map (\row -> map (row !!) selectedIndices) filteredRows
         Right $ DataFrame selectedCols selectedRows
-      Nothing -> Left "Table not found"
+      Nothing -> Left $ "Table not found: " ++ tableName
   | otherwise = Left "Cannot use aggregate functions with multiple columns"
-executeStatement (Update tableName values maybeConditions) = do
+executeStatement (Update tableName values maybeConditions) database = do
   existingTable <- maybeTableToEither (lookup tableName database)
   let updatedRows = updateRows values maybeConditions (getRows existingTable)
   Right $ DataFrame (getColumns existingTable) updatedRows
-executeStatement (Insert tableName values) = do
+executeStatement (Insert tableName values) database = do
   existingTable <- maybeTableToEither (lookup tableName database)
   let newRows = map (\row -> row ++ map StringValue values) (getRows existingTable)
   Right $ DataFrame (getColumns existingTable) newRows
-executeStatement (Delete tableName maybeConditions) = do
+executeStatement (Delete tableName maybeConditions) database = do
   existingTable <- maybeTableToEither (lookup tableName database)
   let deletedRows = case maybeConditions of
         Just conditions -> filter (evalConditionOnRow conditions existingTable) (getRows existingTable)
         Nothing -> []
   let remainingRows = filter (\row -> not (row `elem` deletedRows)) (getRows existingTable)
   Right $ DataFrame (getColumns existingTable) remainingRows
-executeStatement _ = Left "Not implemented"
+executeStatement _ _ = Left "Not implemented"
 
 
 updateRows :: [(String, Value)] -> Maybe [Operator] -> [Row] -> [Row]
