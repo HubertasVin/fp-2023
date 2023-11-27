@@ -1,10 +1,14 @@
 import Data.Either
 import Data.Maybe ()
-import DataFrame
 import InMemoryTables qualified as D
 import Lib1
-import Lib2 (ParsedStatement (..), Operator(..), parseStatement, executeStatement)
+import Lib2
+import Lib3
 import Test.Hspec
+import DataFrame
+import Control.Monad.Free (Free (..), liftF)
+import Data.Time ( UTCTime, getCurrentTime )
+import Data.IORef
 
 main :: IO ()
 main = hspec $ do
@@ -92,3 +96,30 @@ main = hspec $ do
       Lib2.executeStatement (Select ["*"] "employees" (Just [Operator "id" ">" (IntegerValue 1), Operator "name" "=" (StringValue "Ed")])) `shouldBe` Right (DataFrame [Column "id" IntegerType, Column "name" StringType, Column "surname" StringType] [[IntegerValue 2, StringValue "Ed", StringValue "Dl"]])
     it "Returns a DataFrame with SELECT with WHERE with multiple AND statements" $ do
       Lib2.executeStatement (Select ["*"] "employees" (Just [Operator "id" ">" (IntegerValue 1), Operator "surname" "=" (StringValue "Dl"), Operator "name" "=" (StringValue "Ed")])) `shouldBe` Right (DataFrame [Column "id" IntegerType, Column "name" StringType, Column "surname" StringType] [[IntegerValue 2, StringValue "Ed", StringValue "Dl"]])
+  describe "Testing Lib3" $ do
+    it "Testing random functions in Lib3" $ do
+      result <- runExecuteIO (liftF (Lib3.GetTime id) :: Execution UTCTime)
+      show result `shouldBe` "fdsa"
+
+runExecuteIO :: Lib3.Execution r -> IO r
+runExecuteIO (Pure r) = return r
+runExecuteIO (Free step) = do
+    next <- runStep step
+    runExecuteIO next
+    where
+        -- probably you will want to extend the interpreter
+        runStep :: Lib3.ExecutionAlgebra a -> IO a
+        runStep (Lib3.GetTime next) = getCurrentTime >>= return . next
+        runStep (Lib3.LoadFile path next) = do
+            fileContents <- readFile path
+            return $ next fileContents
+        runStep (Lib3.LoadFiles tableNames next) = do
+          fileContents <- mapM (readFile . getTableFilePath) tableNames
+          return $ next fileContents
+        runStep (Lib3.GetTableDfByName tableName tables next) =
+          case lookup tableName tables of
+              Just df -> return $ next df
+              Nothing -> error $ "Table not found: " ++ tableName
+
+getTableFilePath :: String -> String
+getTableFilePath tableName = "db/" ++ tableName ++ ".yaml"
