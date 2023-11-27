@@ -12,7 +12,6 @@
         ".github": true,
         ".devcontainer": true,
         "stack.yaml.lock": true,
-        "fp2023.cabal": true,
         "CHANGELOG.md": true,
         ".history": true
     }

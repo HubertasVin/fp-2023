@@ -22,6 +22,8 @@ type ErrorMessage = String
 
 type Database = [(TableName, DataFrame)]
 
+type FileContent = String
+
 data Operator = Operator String String Value deriving (Show, Eq)
 
 -- Keep the type, modify constructors
@@ -29,6 +31,8 @@ data ParsedStatement
   = ShowTables
   | ShowTable TableName
   | Select [String] TableName (Maybe [Operator])
+  | LoadDatabase
+  | SaveDatabase FilePath
   | Update TableName [(String, Value)] (Maybe [Operator])
   | Insert TableName [String]
   | Delete TableName (Maybe [Operator])
@@ -67,6 +71,8 @@ parseStatement input
                           then Right (Now cols tableName Nothing)
                           else Right (Select cols tableName Nothing)
                   _ -> Left "Invalid SELECT statement"
+            "load" : "file" : _ -> Right LoadDatabase
+            "save" : "file" : path : _ -> Right (SaveDatabase path)
             "update" : table : rest ->
               case dropWhile (/= "set") rest of
                 "set" : assignments -> do
@@ -240,13 +246,13 @@ collectStringValue (x : xs)
 -- Executes a parsed statemet. Produces a DataFrame. Uses
 -- InMemoryTables.databases a source of data.
 -- ExecuteStatement function
-executeStatement :: ParsedStatement -> Either ErrorMessage DataFrame
-executeStatement ShowTables = Right showTables
-executeStatement (ShowTable tablename) =
+executeStatement :: ParsedStatement -> Database -> Either ErrorMessage DataFrame
+executeStatement ShowTables database = Right $ showTables database
+executeStatement (ShowTable tablename) database =
   case lookup tablename database of
     Just df -> Right $ DataFrame [Column "columns" StringType] (map (\col -> [StringValue (getColumnName col)]) (getColumns df))
     Nothing -> Left "Table not found"
-executeStatement (Select columnNames tableName maybeOperator)
+executeStatement (Select columnNames tableName maybeOperator) database
   | null columnNames = Left "No columns provided"
   | null tableName = Left "No table provided"
   | (("min(" `toLowerPrefix` head columnNames || "sum(" `toLowerPrefix` head columnNames) && null (tail columnNames)) || not ("min(" `toLowerPrefix` head columnNames || "sum(" `toLowerPrefix` head columnNames) = case lookup tableName database of
@@ -328,8 +334,8 @@ extractColumnNameFromFunction columnName
   | otherwise = columnName
 
 -- Helper functions
-showTables :: DataFrame
-showTables = DataFrame [Column "tables" StringType] (map (return . StringValue . fst) database)
+showTables :: Database -> DataFrame
+showTables database = DataFrame [Column "tables" StringType] (map (return . StringValue . fst) database)
 
 maybeTableToEither :: Maybe DataFrame -> Either ErrorMessage DataFrame
 maybeTableToEither (Just df) = Right df

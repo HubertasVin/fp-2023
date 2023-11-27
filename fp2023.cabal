@@ -51,6 +51,14 @@ library
   build-depends:
       base >=4.7 && <5
     , free
+    , yaml
+    , vector
+    , unordered-containers
+    , text
+    , bytestring
+    , parsec
+    , aeson
+    , directory
     , time
     , transformers
   default-language: Haskell2010
@@ -69,6 +77,14 @@ executable fp2023-manipulate
     , extra
     , fp2023
     , free
+    , yaml
+    , vector
+    , unordered-containers
+    , text
+    , bytestring
+    , parsec
+    , aeson
+    , directory
     , repline
     , terminal-size
     , time
@@ -120,6 +136,16 @@ test-suite fp2023-test
   ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-export-lists -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints -threaded -rtsopts -with-rtsopts=-N
   build-depends:
       base >=4.7 && <5
+    , free
+    , time
+    , yaml
+    , vector
+    , unordered-containers
+    , text
+    , bytestring
+    , parsec
+    , aeson
+    , directory
     , fp2023
     , hspec
   default-language: Haskell2010
