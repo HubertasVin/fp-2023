@@ -68,10 +68,6 @@ closeFileHandle path = liftF $ CloseFileHandle path ()
 getTime :: Execution UTCTime
 getTime = liftF $ GetTime id
 
-
-
-
-
 executeSql :: String -> Execution (Either ErrorMessage DataFrame)
 executeSql sql = case parseStatement sql of
   Left err -> return $ Left err
@@ -92,6 +88,9 @@ executeSql sql = case parseStatement sql of
         return $ case result of
           Left err -> Left err
           Right df -> Right df
+      (Now columnNames tableName maybeOperator) -> do
+        currentTime <- getTime
+        return $ Right $ DataFrame [Column "CurrentTime" StringType] [[StringValue (show currentTime)]]
       _ -> do
         let result = executeStatement statement (unDatabase generatedDatabase)
         return $ case result of
@@ -206,6 +205,7 @@ parseTable _ = fail "Invalid table format"
 -- TODO Convert Database to YAML string
 databaseToYaml :: Database -> String
 databaseToYaml (Database tables) = unlines $ map tableToYaml tables
+
 
 tableToYaml :: Table -> String
 tableToYaml (tableName, DataFrame columns rows) =

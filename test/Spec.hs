@@ -67,6 +67,10 @@ main = hspec $ do
       Lib2.parseStatement "select * from employees where" `shouldSatisfy` isLeft
     it "Handles update" $ do
       Lib2.parseStatement "update employees set id = 6 name = \"Ka\" surname = \"Mi\" where name = \"Vi\"" `shouldSatisfy` isLeft
+    it "Handles insert" $ do
+      Lib2.parseStatement "INSERT INTO employees (id, name, surname) VALUES (5, 'Alice', 'Johnson')" `shouldSatisfy` isRight
+    -- it "Handles delete" $ do
+    --   Lib2.parseStatement "delete from employees where " `shouldSatisfy` isRight
   describe "Lib2.executeStatement" $ do
     it "Returns the SHOW TABLES dataframe correctly" $ do
       Lib2.executeStatement ShowTables `shouldBe` Right (DataFrame [Column "tables" StringType] [[StringValue "employees"], [StringValue "invalid1"], [StringValue "invalid2"], [StringValue "long_strings"], [StringValue "flags"]])

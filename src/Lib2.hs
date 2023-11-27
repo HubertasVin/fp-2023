@@ -11,8 +11,8 @@ module Lib2
 where
 
 import Data.Char (isDigit, isSpace, toLower)
-import Data.List (elemIndex, find, isPrefixOf)
-import Data.Maybe (fromJust)
+import Data.List (elemIndex, find, isPrefixOf, findIndex)
+import Data.Maybe (fromJust, fromMaybe)
 import DataFrame (Column (..), ColumnType (..), DataFrame (..), Row (..), Value (..))
 import InMemoryTables (TableName, database)
 import Lib1 ()
@@ -31,9 +31,12 @@ data ParsedStatement
   = ShowTables
   | ShowTable TableName
   | Select [String] TableName (Maybe [Operator])
-  | Update TableName [(String, Value)] (Maybe [Operator])
   | LoadDatabase
   | SaveDatabase FilePath
+  | Update TableName [(String, Value)] (Maybe [Operator])
+  | Insert TableName [String]
+  | Delete TableName (Maybe [Operator])
+  | Now [String] TableName (Maybe [Operator])
   | ParsedStatement
   | Where [Operator]
   deriving (Show, Eq)
@@ -55,13 +58,21 @@ parseStatement input
             ["show", "table", table] -> Right (ShowTable table)
             ("select" : columns) ->
               case break (== "from") columns of
-                (cols, "from" : tableName : "where" : rest) -> do
-                  (conditions, _) <- parseWhereConditions rest
-                  if null conditions
-                    then Left "Invalid WHERE statement"
-                    else Right (Select cols tableName (Just conditions))
-                (cols, "from" : tableName : _) -> Right (Select cols tableName Nothing)
-                _ -> Left "Invalid SELECT statement"
+                  (cols, "from" : tableName : "where" : rest) -> do
+                      (conditions, _) <- parseWhereConditions rest
+                      if null conditions
+                          then Left "Invalid WHERE statement"
+                          else
+                              if not (null cols) && "now(" `toLowerPrefix` head cols
+                                  then Right (Now cols tableName (Just conditions))
+                                  else Right (Select cols tableName (Just conditions))
+                  (cols, "from" : tableName : _) ->
+                      if not (null cols) && "now(" `toLowerPrefix` head cols
+                          then Right (Now cols tableName Nothing)
+                          else Right (Select cols tableName Nothing)
+                  _ -> Left "Invalid SELECT statement"
+            "load" : "file" : _ -> Right LoadDatabase
+            "save" : "file" : path : _ -> Right (SaveDatabase path)
             "update" : table : rest ->
               case dropWhile (/= "set") rest of
                 "set" : assignments -> do
@@ -69,9 +80,13 @@ parseStatement input
                   (conditions, _) <- parseWhereConditions remaining
                   Right (Update table values (Just conditions))
                 _ -> Left "Invalid UPDATE statement"
-            "load" : "file" : _ -> Right LoadDatabase
-            "save" : "file" : path : _ -> Right (SaveDatabase path)
+            ["insert", "into", tableName, "values", values] ->
+              Right (Insert tableName (splitStringIntoWords values))
+            ["delete", "from", tableName, "where", conditions] -> do
+              (parsedConditions, _) <- parseWhereConditions [conditions]
+              Right (Delete tableName (Just parsedConditions))
             _ -> Left "Not supported statement"
+
 
 replaceKeywordsToLower :: [String] -> [String]
 replaceKeywordsToLower = map replaceKeyword
@@ -82,7 +97,7 @@ replaceKeywordsToLower = map replaceKeyword
       | otherwise = keyword
 
 keywordsList :: [String]
-keywordsList = ["show", "table", "tables", "select", "from", "where", "and", "or", "not", "now", "min", "sum", "update", "set"]
+keywordsList = ["show", "table", "tables", "select", "from", "where", "and", "or", "not", "now", "min", "sum", "update", "set", "insert", "into", "values"]
 
 toLowerPrefix :: String -> String -> Bool
 toLowerPrefix prefix str = map toLower prefix `isPrefixOf` map toLower str
@@ -270,8 +285,47 @@ executeStatement (Select columnNames tableName maybeOperator) database
               | otherwise = map (\row -> map (row !!) selectedIndices) filteredRows
         Right $ DataFrame selectedCols selectedRows
       Nothing -> Left "Table not found"
-  | otherwise = Left "Cannot use agregate functions with multiple columns"
-executeStatement _ _ = Left "Not implemented"
+  | otherwise = Left "Cannot use aggregate functions with multiple columns"
+executeStatement (Update tableName values maybeConditions) = do
+  existingTable <- maybeTableToEither (lookup tableName database)
+  let updatedRows = updateRows values maybeConditions (getRows existingTable)
+  Right $ DataFrame (getColumns existingTable) updatedRows
+executeStatement (Insert tableName values) = do
+  existingTable <- maybeTableToEither (lookup tableName database)
+  let newRows = map (\row -> row ++ map StringValue values) (getRows existingTable)
+  Right $ DataFrame (getColumns existingTable) newRows
+executeStatement (Delete tableName maybeConditions) = do
+  existingTable <- maybeTableToEither (lookup tableName database)
+  let deletedRows = case maybeConditions of
+        Just conditions -> filter (evalConditionOnRow conditions existingTable) (getRows existingTable)
+        Nothing -> []
+  let remainingRows = filter (\row -> not (row `elem` deletedRows)) (getRows existingTable)
+  Right $ DataFrame (getColumns existingTable) remainingRows
+executeStatement _ = Left "Not implemented"
+
+
+updateRows :: [(String, Value)] -> Maybe [Operator] -> [Row] -> [Row]
+updateRows _ _ [] = []
+updateRows values maybeConditions (row:rows) =
+  let existingTable = DataFrame (getColumns existingTable) [row] 
+  in if all (\(Operator colName op val) -> evalCondition colName op val existingTable row) (fromMaybe [] maybeConditions)
+    then updateRow values existingTable row : updateRows values maybeConditions rows
+    else row : updateRows values maybeConditions rows
+
+updateRow :: [(String, Value)] -> DataFrame -> Row -> Row
+updateRow [] _ row = row
+updateRow ((colName, newValue):rest) existingTable row =
+  case findIndex (\(Column name _) -> name == colName) (getColumns existingTable) of
+    Just index -> updateRow rest existingTable (take index row ++ [newValue] ++ drop (index + 1) row)
+    Nothing -> updateRow rest existingTable row
+
+evalConditionOnRow :: [Operator] -> DataFrame -> Row -> Bool
+evalConditionOnRow conditions df row = all (\cond -> evalConditionOnRow' cond df row) conditions
+
+evalConditionOnRow' :: Operator -> DataFrame -> Row -> Bool
+evalConditionOnRow' (Operator colName op val) df row =
+  evalCondition colName op val df row
+
 
 extractColumnNameFromFunction :: String -> String
 extractColumnNameFromFunction columnName
