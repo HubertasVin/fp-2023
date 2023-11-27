@@ -22,6 +22,8 @@ type ErrorMessage = String
 
 type Database = [(TableName, DataFrame)]
 
+type FileContent = String
+
 data Operator = Operator String String Value deriving (Show, Eq)
 
 -- Keep the type, modify constructors
@@ -30,7 +32,8 @@ data ParsedStatement
   | ShowTable TableName
   | Select [String] TableName (Maybe [Operator])
   | Update TableName [(String, Value)] (Maybe [Operator])
-  | LoadTable
+  | LoadDatabase
+  | SaveDatabase FilePath
   | ParsedStatement
   | Where [Operator]
   deriving (Show, Eq)
@@ -66,7 +69,8 @@ parseStatement input
                   (conditions, _) <- parseWhereConditions remaining
                   Right (Update table values (Just conditions))
                 _ -> Left "Invalid UPDATE statement"
-            "load" : "file" : _ -> Right LoadTable
+            "load" : "file" : _ -> Right LoadDatabase
+            "save" : "file" : path : _ -> Right (SaveDatabase path)
             _ -> Left "Not supported statement"
 
 replaceKeywordsToLower :: [String] -> [String]
