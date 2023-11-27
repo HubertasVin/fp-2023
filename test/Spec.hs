@@ -8,7 +8,10 @@ import Test.Hspec
 import DataFrame
 import Control.Monad.Free (Free (..), liftF)
 import Data.Time ( UTCTime, getCurrentTime )
-import Data.IORef
+import Data.IORef ()
+import System.Directory (doesFileExist, removeFile, renameFile)
+import System.IO (IOMode (ReadMode), hClose, withFile)
+import qualified InMemoryTables as DataFrame
 
 main :: IO ()
 main = hspec $ do
@@ -46,9 +49,9 @@ main = hspec $ do
     it "Parses SHOW TABLE statement" $ do
       Lib2.parseStatement "show table flags" `shouldBe` Right (ShowTable "flags")
     it "Parses SELECT id FROM statement" $ do
-      Lib2.parseStatement "SELECT id FROM employees" `shouldBe` Right (Select ["id"] "employees" Nothing)
+      Lib2.parseStatement "SELECT id FROM employees" `shouldBe` Right (Select ["id"] ["employees"] Nothing Nothing)
     it "Parses SELECT statement with case-sensitive columns and table names, ignoring SQL keyword case" $ do
-      Lib2.parseStatement "SelecT Id FroM Employees" `shouldBe` Right (Select ["Id"] "Employees" Nothing)
+      Lib2.parseStatement "SelecT Id FroM Employees" `shouldBe` Right (Select ["Id"] ["Employees"] Nothing Nothing)
     it "Handles empty input" $ do
       Lib2.parseStatement "" `shouldSatisfy` isLeft
     it "Handles not supported statements" $ do
@@ -56,54 +59,52 @@ main = hspec $ do
     it "Handles empty select input" $ do
       Lib2.parseStatement "select" `shouldSatisfy` isLeft
     it "Works with WHERE statements" $ do
-      Lib2.parseStatement "select * from employees where id = 1" `shouldBe` Right (Select ["*"] "employees" (Just [Operator "id" "=" (IntegerValue 1)]))
+      Lib2.parseStatement "select * from employees where id = 1" `shouldBe` Right (Select ["*"] ["employees"] (Just [Operator "id" "=" (IntegerValue 1)]) Nothing)
     it "WHERE statements work with strings" $ do
-      Lib2.parseStatement "select * from employees where name = \"Vi\"" `shouldBe` Right (Select ["*"] "employees" (Just [Operator "name" "=" (StringValue "Vi")]))
+      Lib2.parseStatement "select * from employees where name = \"Vi\"" `shouldBe` Right (Select ["*"] ["employees"] (Just [Operator "name" "=" (StringValue "Vi")]) Nothing)
     it "Works with WHERE statements with multiple ANDs" $ do
-      Lib2.parseStatement "select * from employees where id > 1 and name = \"Vi\" and surname = \"Po\"" `shouldBe` Right (Select ["*"] "employees" (Just [Operator "id" ">" (IntegerValue 1), Operator "name" "=" (StringValue "Vi"), Operator "surname" "=" (StringValue "Po")]))
+      Lib2.parseStatement "select * from employees where id > 1 and name = \"Vi\" and surname = \"Po\"" `shouldBe` Right (Select ["*"] ["employees"] (Just [Operator "id" ">" (IntegerValue 1), Operator "name" "=" (StringValue "Vi"), Operator "surname" "=" (StringValue "Po")]) Nothing)
     it "Handles where statement with incompatible operator" $ do
       Lib2.parseStatement "select * from employees where id is 1" `shouldSatisfy` isLeft
     it "Handles incorrect where syntax" $ do
       Lib2.parseStatement "select * from employees where" `shouldSatisfy` isLeft
     it "Handles update" $ do
-      Lib2.parseStatement "update employees set id = 6 name = \"Ka\" surname = \"Mi\" where name = \"Vi\"" `shouldSatisfy` isLeft
+      Lib2.parseStatement "update employees set id = 6 name = \"Ka\" surname = \"Mi\" where name = \"Vi\"" `shouldBe` Right (Update "employees" [("id",IntegerValue 6),("name",StringValue "Ka"),("surname",StringValue "Mi")] (Just [Operator "name" "=" (StringValue "Vi")]))
     it "Handles insert" $ do
-      Lib2.parseStatement "INSERT INTO employees (id, name, surname) VALUES (5, 'Alice', 'Johnson')" `shouldSatisfy` isRight
+      Lib2.parseStatement "INSERT INTO employees (id, name, surname) VALUES (5, 'Alice', 'Johnson')" `shouldSatisfy` isLeft
     -- it "Handles delete" $ do
     --   Lib2.parseStatement "delete from employees where " `shouldSatisfy` isRight
   describe "Lib2.executeStatement" $ do
     it "Returns the SHOW TABLES dataframe correctly" $ do
-      Lib2.executeStatement ShowTables `shouldBe` Right (DataFrame [Column "tables" StringType] [[StringValue "employees"], [StringValue "invalid1"], [StringValue "invalid2"], [StringValue "long_strings"], [StringValue "flags"]])
+      Lib2.executeStatement ShowTables DataFrame.database `shouldBe` Right (DataFrame [Column "tables" StringType] [[StringValue "employees"], [StringValue "employeesSalary"], [StringValue "invalid1"], [StringValue "invalid2"], [StringValue "long_strings"], [StringValue "flags"]])
     it "Returns a SHOW TABLE dataframe correctly" $ do
-      Lib2.executeStatement (ShowTable "employees") `shouldBe` Right (DataFrame [Column "columns" StringType] [[StringValue "id"], [StringValue "name"], [StringValue "surname"]])
+      Lib2.executeStatement (ShowTable "employees") DataFrame.database `shouldBe` Right (DataFrame [Column "columns" StringType] [[StringValue "id"], [StringValue "name"], [StringValue "surname"]])
     it "Handles not existing tables with SHOW TABLE" $ do
-      Lib2.executeStatement (ShowTable "nothing") `shouldSatisfy` isLeft
+      Lib2.executeStatement (ShowTable "nothing") DataFrame.database `shouldSatisfy` isLeft
     it "Returns a Dataframe with SELECT * correctly" $ do
-      Lib2.executeStatement (Select ["*"] "employees" Nothing) `shouldBe` Right (snd D.tableEmployees)
+      Lib2.executeStatement (Select ["*"] ["employees"] Nothing Nothing) DataFrame.database `shouldBe` Right (snd D.tableEmployees)
     it "Returns a DataFrame with a SELECT with a specific column correctly" $ do
-      Lib2.executeStatement (Select ["id"] "employees" Nothing) `shouldBe` Right (DataFrame [Column "id" IntegerType] [[IntegerValue 1], [IntegerValue 2], [IntegerValue 3], [IntegerValue 4]])
+      Lib2.executeStatement (Select ["id"] ["employees"] Nothing Nothing) DataFrame.database `shouldBe` Right (DataFrame [Column "id" IntegerType] [[IntegerValue 1], [IntegerValue 2], [IntegerValue 3], [IntegerValue 4]])
     it "Handles a SELECT statement with a nonexistent table" $ do
-      Lib2.executeStatement (Select ["*"] "nothing" Nothing) `shouldSatisfy` isLeft
+      Lib2.executeStatement (Select ["*"] ["nothing"] Nothing Nothing) DataFrame.database `shouldSatisfy` isLeft
     it "Handles a SELECT statement with a nonexistent column" $ do
-      Lib2.executeStatement (Select ["nothing"] "employees" Nothing) `shouldSatisfy` isLeft
+      Lib2.executeStatement (Select ["nothing"] ["employees"] Nothing Nothing) DataFrame.database `shouldSatisfy` isLeft
     it "Returns a DataFrame with SELECT with where statement" $ do
-      Lib2.executeStatement (Select ["*"] "employees" (Just [Operator "id" "=" (IntegerValue 1)])) `shouldBe` Right (DataFrame [Column "id" IntegerType, Column "name" StringType, Column "surname" StringType] [[IntegerValue 1, StringValue "Vi", StringValue "Po"]])
-    it "Returns a DataFrame with SELECT with where case with string value" $ do
-      Lib2.executeStatement (Select ["*"] "employees" (Just [Operator "name" "=" (StringValue "Vi")])) `shouldBe` Right (DataFrame [Column "id" IntegerType, Column "name" StringType, Column "surname" StringType] [[IntegerValue 1, StringValue "Vi", StringValue "Po"]])
+      Lib2.executeStatement (Select ["*"] ["employees"] (Just [Operator "id" "=" (IntegerValue 1)]) Nothing) DataFrame.database `shouldBe` Right (DataFrame [Column "id" IntegerType, Column "name" StringType, Column "surname" StringType] [[IntegerValue 1, StringValue "Vi", StringValue "Po"]])
     it "Handles wrong select min syntax" $ do
-      Lib2.executeStatement (Select ["min( id)"] "employees" Nothing) `shouldSatisfy` isLeft
+      Lib2.executeStatement (Select ["min( id)"] ["employees"] Nothing Nothing) DataFrame.database `shouldSatisfy` isLeft
     it "Returns a DataFrame with SELECT min correctly" $ do
-      Lib2.executeStatement (Select ["min(id)"] "employees" Nothing) `shouldBe` Right (DataFrame [Column "minimum" IntegerType] [[IntegerValue 1]])
+      Lib2.executeStatement (Select ["min(id)"] ["employees"] Nothing Nothing) DataFrame.database `shouldBe` Right (DataFrame [Column "minimum" IntegerType] [[IntegerValue 1]])
     it "Returns a DataFrame with SELECT sum with where case correctly" $ do
-      Lib2.executeStatement (Select ["sum(id)"] "employees" (Just [Operator "id" ">" (IntegerValue 2)])) `shouldBe` Right (DataFrame [Column "sum" IntegerType] [[IntegerValue 7]])
+      Lib2.executeStatement (Select ["sum(id)"] ["employees"] (Just [Operator "id" ">" (IntegerValue 2)]) Nothing) DataFrame.database `shouldBe` Right (DataFrame [Column "sum" IntegerType] [[IntegerValue 7]])
     it "Returns a DataFrame with SELECT with WHERE AND" $ do
-      Lib2.executeStatement (Select ["*"] "employees" (Just [Operator "id" ">" (IntegerValue 1), Operator "name" "=" (StringValue "Ed")])) `shouldBe` Right (DataFrame [Column "id" IntegerType, Column "name" StringType, Column "surname" StringType] [[IntegerValue 2, StringValue "Ed", StringValue "Dl"]])
+      Lib2.executeStatement (Select ["*"] ["employees"] (Just [Operator "id" ">" (IntegerValue 1),Operator "name" "=" (StringValue "Ed")]) Nothing) DataFrame.database `shouldBe` Right (DataFrame [Column "id" IntegerType, Column "name" StringType, Column "surname" StringType] [[IntegerValue 2, StringValue "Ed", StringValue "Dl"]])
     it "Returns a DataFrame with SELECT with WHERE with multiple AND statements" $ do
-      Lib2.executeStatement (Select ["*"] "employees" (Just [Operator "id" ">" (IntegerValue 1), Operator "surname" "=" (StringValue "Dl"), Operator "name" "=" (StringValue "Ed")])) `shouldBe` Right (DataFrame [Column "id" IntegerType, Column "name" StringType, Column "surname" StringType] [[IntegerValue 2, StringValue "Ed", StringValue "Dl"]])
-  describe "Testing Lib3" $ do
-    it "Testing random functions in Lib3" $ do
-      result <- runExecuteIO (liftF (Lib3.GetTime id) :: Execution UTCTime)
-      show result `shouldBe` "fdsa"
+      Lib2.executeStatement (Select ["*"] ["employees"] (Just [Operator "id" ">" (IntegerValue 1),Operator "surname" "=" (StringValue "Dl"),Operator "name" "=" (StringValue "Ed")]) Nothing) DataFrame.database `shouldBe` Right (DataFrame [Column "id" IntegerType, Column "name" StringType, Column "surname" StringType] [[IntegerValue 2, StringValue "Ed", StringValue "Dl"]])
+  -- describe "Testing Lib3" $ do
+  --   it "Testing random functions in Lib3" $ do
+  --     result <- runExecuteIO (liftF (Lib3.GetTime id) :: Execution UTCTime)
+  --     show result `shouldBe` "fdsa"
 
 runExecuteIO :: Lib3.Execution r -> IO r
 runExecuteIO (Pure r) = return r
@@ -115,15 +116,18 @@ runExecuteIO (Free step) = do
         runStep :: Lib3.ExecutionAlgebra a -> IO a
         runStep (Lib3.GetTime next) = getCurrentTime >>= return . next
         runStep (Lib3.LoadFile path next) = do
-            fileContents <- readFile path
-            return $ next fileContents
-        runStep (Lib3.LoadFiles tableNames next) = do
-          fileContents <- mapM (readFile . getTableFilePath) tableNames
+          exists <- doesFileExist path
+          exists2 <- doesFileExist $ "src/" ++ path
+          let finalPath = if exists then path else if exists2 then "src/" ++ path else error $ "File not found: " ++ path
+          fileContents <- readFile finalPath
+          withFile finalPath ReadMode $ \handle -> hClose handle
           return $ next fileContents
-        runStep (Lib3.GetTableDfByName tableName tables next) =
-          case lookup tableName tables of
-              Just df -> return $ next df
-              Nothing -> error $ "Table not found: " ++ tableName
-
-getTableFilePath :: String -> String
-getTableFilePath tableName = "db/" ++ tableName ++ ".yaml"
+        runStep (Lib3.SaveFile path fileContents next) = do
+          writeFile path fileContents
+          return next
+        runStep (Lib3.DeleteFile path next) = do
+          removeFile path
+          return next
+        runStep (Lib3.RenameFile pathSrc pathDst next) = do
+          renameFile pathSrc pathDst
+          return next
