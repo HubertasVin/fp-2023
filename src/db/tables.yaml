@@ -1,4 +1,37 @@
-- tables: 
-    - name: employees
-    - name: employers
-    - name: flags
+- table: employees
+  columns:
+    - name: id
+      type: IntegerType
+    - name: name
+      type: StringType
+    - name: surname
+      type: StringType
+  rows:
+    - [1, Vi, Po]
+    - [2, Ed, Dl]
+    - [3, Hu, Vi]
+    - [4, Pa, Dl]
+- table: employers
+  columns:
+    - name: id
+      type: IntegerType
+    - name: name
+      type: StringType
+    - name: surname
+      type: StringType
+  rows:
+    - [1, Vi, Po]
+    - [2, Ed, Dl]
+    - [3, Hu, Vi]
+    - [4, Pa, Dl]
+- table: flags
+  columns:
+    - name: flag
+      type: StringType
+    - name: value
+      type: BoolType
+  rows:
+    - [a, true]
+    - [b, true]
+    - [b, null]
+    - [b, false]

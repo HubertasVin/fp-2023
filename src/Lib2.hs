@@ -30,7 +30,7 @@ data ParsedStatement
   | ShowTable TableName
   | Select [String] TableName (Maybe [Operator])
   | Update TableName [(String, Value)] (Maybe [Operator])
-  | Now
+  | LoadTable
   | ParsedStatement
   | Where [Operator]
   deriving (Show, Eq)
@@ -66,6 +66,7 @@ parseStatement input
                   (conditions, _) <- parseWhereConditions remaining
                   Right (Update table values (Just conditions))
                 _ -> Left "Invalid UPDATE statement"
+            "load" : "file" : _ -> Right LoadTable
             _ -> Left "Not supported statement"
 
 replaceKeywordsToLower :: [String] -> [String]
@@ -226,13 +227,13 @@ collectStringValue (x : xs)
 -- Executes a parsed statemet. Produces a DataFrame. Uses
 -- InMemoryTables.databases a source of data.
 -- ExecuteStatement function
-executeStatement :: ParsedStatement -> Either ErrorMessage DataFrame
-executeStatement ShowTables = Right showTables
-executeStatement (ShowTable tablename) =
+executeStatement :: ParsedStatement -> Database -> Either ErrorMessage DataFrame
+executeStatement ShowTables database = Right $ showTables database
+executeStatement (ShowTable tablename) database =
   case lookup tablename database of
     Just df -> Right $ DataFrame [Column "columns" StringType] (map (\col -> [StringValue (getColumnName col)]) (getColumns df))
     Nothing -> Left "Table not found"
-executeStatement (Select columnNames tableName maybeOperator)
+executeStatement (Select columnNames tableName maybeOperator) database
   | null columnNames = Left "No columns provided"
   | null tableName = Left "No table provided"
   | (("min(" `toLowerPrefix` head columnNames || "sum(" `toLowerPrefix` head columnNames) && null (tail columnNames)) || not ("min(" `toLowerPrefix` head columnNames || "sum(" `toLowerPrefix` head columnNames) = case lookup tableName database of
@@ -266,7 +267,7 @@ executeStatement (Select columnNames tableName maybeOperator)
         Right $ DataFrame selectedCols selectedRows
       Nothing -> Left "Table not found"
   | otherwise = Left "Cannot use agregate functions with multiple columns"
-executeStatement _ = Left "Not implemented"
+executeStatement _ _ = Left "Not implemented"
 
 extractColumnNameFromFunction :: String -> String
 extractColumnNameFromFunction columnName
@@ -275,8 +276,8 @@ extractColumnNameFromFunction columnName
   | otherwise = columnName
 
 -- Helper functions
-showTables :: DataFrame
-showTables = DataFrame [Column "tables" StringType] (map (return . StringValue . fst) database)
+showTables :: Database -> DataFrame
+showTables database = DataFrame [Column "tables" StringType] (map (return . StringValue . fst) database)
 
 maybeTableToEither :: Maybe DataFrame -> Either ErrorMessage DataFrame
 maybeTableToEither (Just df) = Right df
