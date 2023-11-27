@@ -38,7 +38,6 @@ data ExecutionAlgebra next
   | DeleteFile FilePath next
   | RenameFile FilePath FilePath next
   | GetTime (UTCTime -> next)
-  | CloseFileHandle FilePath next
   -- feel free to add more constructors here
   deriving (Functor)
 
@@ -61,9 +60,6 @@ deleteFile path = liftF $ DeleteFile path ()
 
 renameFile :: FilePath -> FilePath -> Execution ()
 renameFile pathSrc pathDst = liftF $ RenameFile pathSrc pathDst ()
-
-closeFileHandle :: FilePath -> Execution ()
-closeFileHandle path = liftF $ CloseFileHandle path ()
 
 getTime :: Execution UTCTime
 getTime = liftF $ GetTime id
