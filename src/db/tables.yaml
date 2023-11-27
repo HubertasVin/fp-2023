@@ -12,21 +12,17 @@
     - [3, Hu, Vi]
     - [4, Pa, Dl]
 
-
-- table: employers
+- table: employeesSalary
   columns:
     - name: id
       type: IntegerType
-    - name: name
-      type: StringType
-    - name: surname
+    - name: salary
       type: StringType
   rows:
-    - [1, Vi, Po]
-    - [2, Ed, Dl]
-    - [3, Hu, Vi]
-    - [4, Pa, Dl]
-
+    - [1, "900"]
+    - [2, "300"]
+    - [3, "400"]
+    - [4, "1000"]
 
 - table: flags
   columns:
@@ -39,5 +35,3 @@
     - [b, true]
     - [b, null]
     - [b, false]
-
-
