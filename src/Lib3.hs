@@ -83,6 +83,21 @@ executeSql sql = case parseStatement sql of
         return $ case result of
           Left err -> Left err
           Right df -> Right df
+      Insert tableName values -> do
+        let result = executeStatement statement (unDatabase generatedDatabase)
+        return $ case result of
+          Left err -> Left err
+          Right df -> Right df
+      Delete tableName conditions -> do
+        let result = executeStatement statement (unDatabase generatedDatabase)
+        return $ case result of
+          Left err -> Left err
+          Right df -> Right df
+      Update table values conditions -> do
+        let result = executeStatement statement (unDatabase generatedDatabase)
+        return $ case result of
+          Left err -> Left err
+          Right df -> Right df
       (Now columnNames tableName maybeOperator) -> do
         currentTime <- getTime
         return $ Right $ DataFrame [Column "CurrentTime" StringType] [[StringValue (show currentTime)]]
@@ -91,7 +106,6 @@ executeSql sql = case parseStatement sql of
         return $ case result of
           Left err -> Left err
           Right df -> Right df
-
 
 
 -- TODO Convert Database to Yaml string
