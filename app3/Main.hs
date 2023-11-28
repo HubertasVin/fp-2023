@@ -35,15 +35,23 @@ completer n = do
         [ "select",
           "*",
           "from",
+          "employees",
+          "employeesSalary",
+          "flags",
+          "specimen",
           "show",
           "table",
           "tables",
           "insert",
           "into",
+          "update",
+          "set",
+          "delete",
           "values",
           "set",
           "update",
-          "delete"
+          "delete",
+          "where"
         ]
   return $ Prelude.filter (L.isPrefixOf n) names
 
@@ -76,22 +84,51 @@ runExecuteIO (Free step) = do
     -- probably you will want to extend the interpreter
     runStep :: Lib3.ExecutionAlgebra a -> IO a
     runStep (Lib3.GetTime next) = getCurrentTime >>= return . next
-    runStep (Lib3.LoadFile path next) = do
+    runStep (Lib3.LoadFile next) = do
+      let path = "db/tables.yaml"
       exists <- doesFileExist path
       exists2 <- doesFileExist $ "src/" ++ path
-      let finalPath = if exists then path else if exists2 then "src/" ++ path else error $ "File not found: " ++ path
+      let finalPath
+            | exists = path
+            | exists2 = "src/" ++ path
+            | otherwise = error $ "File not found: " ++ path
       fileContents <- readFile finalPath
       withFile finalPath ReadMode $ \handle -> hClose handle
       return $ next fileContents
-    runStep (Lib3.SaveFile path fileContents next) = do
-      writeFile path fileContents
+    runStep (Lib3.SaveFile fileContents next) = do
+      let path = "db/tablesTemp.yaml"
+      exists <- doesFileExist path
+      exists2 <- doesFileExist $ "src/" ++ path
+      let finalPath
+            | exists = path
+            | exists2 = "src/" ++ path
+            | otherwise = error $ "File not found: " ++ path
+      writeFile finalPath fileContents
       return next
-    runStep (Lib3.DeleteFile path next) = do
-      removeFile path
+    runStep (Lib3.DeleteFile next) = do
+      let path = "db/tablesTemp.yaml"
+      exists <- doesFileExist path
+      exists2 <- doesFileExist $ "src/" ++ path
+      let finalPath
+            | exists = path
+            | exists2 = "src/" ++ path
+            | otherwise = error $ "File not found: " ++ path
+      removeFile "db/tablesTemp.yaml"
       return next
-    runStep (Lib3.RenameFile pathSrc pathDst next) = do
-      renameFile pathSrc pathDst
+    runStep (Lib3.RenameFile next) = do
+      let pathSrc = "db/tablesTemp.yaml"
+      let pathDst = "db/tables.yaml"
+      existsSrc <- doesFileExist pathSrc
+      existsSrc2 <- doesFileExist $ "src/" ++ pathSrc
+      existsDst <- doesFileExist pathDst
+      existsDst2 <- doesFileExist $ "src/" ++ pathDst
+      let finalPathSrc
+            | existsSrc = pathSrc
+            | existsSrc2 = "src/" ++ pathSrc
+            | otherwise = error $ "File not found: " ++ pathSrc
+      let finalPathDst
+            | existsDst = pathDst
+            | existsDst2 = "src/" ++ pathDst
+            | otherwise = error $ "File not found: " ++ pathDst
+      renameFile finalPathSrc finalPathDst
       return next
-
-getTableFilePath :: String -> String
-getTableFilePath tableName = "db/" ++ tableName ++ ".yaml"

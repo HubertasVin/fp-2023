@@ -2,7 +2,8 @@ import Control.Monad.Free (Free (..), liftF)
 import Data.Either
 import Data.IORef ()
 import Data.Maybe ()
-import Data.Time (UTCTime, getCurrentTime)
+import Data.Time (UTCTime, fromGregorian, getCurrentTime, secondsToDiffTime)
+import Data.Time.Clock
 import DataFrame
 import InMemoryTables qualified as D
 import InMemoryTables qualified as DataFrame
@@ -107,11 +108,16 @@ main = hspec $ do
     --     show result `shouldBe` "fdsa"
     it "Joining two tables" $ do
       result <- runExecuteIO $ Lib3.executeSql "select * from employees, employeesSalary where employees.id = employeesSalary.id;"
-      result `shouldBe` Right (DataFrame [Column "employees.id" IntegerType, Column "employees.name" StringType, Column "employees.surname" StringType, Column "employeesSalary.salary" StringType] [
-        [IntegerValue 1, StringValue "Vi", StringValue "Po", StringValue "900"], 
-        [IntegerValue 2, StringValue "Ed", StringValue "Dl", StringValue "300"], 
-        [IntegerValue 3, StringValue "Hu", StringValue "Vi", StringValue "400"], 
-        [IntegerValue 4, StringValue "Pa", StringValue "Dl", StringValue "1000"]])
+      result
+        `shouldBe` Right
+          ( DataFrame
+              [Column "employees.id" IntegerType, Column "employees.name" StringType, Column "employees.surname" StringType, Column "employeesSalary.salary" StringType]
+              [ [IntegerValue 1, StringValue "Vi", StringValue "Po", StringValue "900"],
+                [IntegerValue 2, StringValue "Ed", StringValue "Dl", StringValue "300"],
+                [IntegerValue 3, StringValue "Hu", StringValue "Vi", StringValue "400"],
+                [IntegerValue 4, StringValue "Pa", StringValue "Dl", StringValue "1000"]
+              ]
+          )
     it "table with now() in columns" $ do
       result <- runExecuteIO $ Lib3.executeSql "select now() from flags;"
       case result of
@@ -119,15 +125,25 @@ main = hspec $ do
         _ -> error "Expected a DataFrame with at least one column"
     it "table comparing time in where" $ do
       result <- runExecuteIO $ Lib3.executeSql "select * from specimen where time_taken < \"2023-11-23\";"
-      result `shouldBe` Right (DataFrame [Column "isbn" IntegerType, Column "title" StringType, Column "author" StringType, Column "year" IntegerType, Column "taken" BoolType, Column "time_taken" StringType] [
-        [IntegerValue 1, StringValue "The Hobbit (The Lord of the Rings, #0)", StringValue "J. R. R. Tolkien", IntegerValue 1937, BoolValue True, StringValue "2023-11-20 13:09:01.378811888 UTC"], 
-        [IntegerValue 4, StringValue "The Shining", StringValue "Stephen King", IntegerValue 1977, BoolValue True, StringValue "2023-11-18 15:43:02.232016126 UTC"]])
+      result
+        `shouldBe` Right
+          ( DataFrame
+              [Column "isbn" IntegerType, Column "title" StringType, Column "author" StringType, Column "year" IntegerType, Column "taken" BoolType, Column "time_taken" StringType]
+              [ [IntegerValue 1, StringValue "The Hobbit (The Lord of the Rings, #0)", StringValue "J. R. R. Tolkien", IntegerValue 1937, BoolValue True, StringValue "2023-11-20 13:09:01.378811888 UTC"],
+                [IntegerValue 4, StringValue "The Shining", StringValue "Stephen King", IntegerValue 1977, BoolValue True, StringValue "2023-11-18 15:43:02.232016126 UTC"]
+              ]
+          )
     it "table comparing time in where with now()" $ do
       result <- runExecuteIO $ Lib3.executeSql "select * from specimen where time_taken < now();"
-      result `shouldBe` Right (DataFrame [Column "isbn" IntegerType, Column "title" StringType, Column "author" StringType, Column "year" IntegerType, Column "taken" BoolType, Column "time_taken" StringType] [
-        [IntegerValue 1, StringValue "The Hobbit (The Lord of the Rings, #0)", StringValue "J. R. R. Tolkien", IntegerValue 1937, BoolValue True, StringValue "2023-11-20 13:09:01.378811888 UTC"], 
-        [IntegerValue 3, StringValue "Pet Sematary", StringValue "Stephen King", IntegerValue 1983, BoolValue True, StringValue "2023-11-27 11:18:22.691749541 UTC"],
-        [IntegerValue 4, StringValue "The Shining", StringValue "Stephen King", IntegerValue 1977, BoolValue True, StringValue "2023-11-18 15:43:02.232016126 UTC"]])
+      result
+        `shouldBe` Right
+          ( DataFrame
+              [Column "isbn" IntegerType, Column "title" StringType, Column "author" StringType, Column "year" IntegerType, Column "taken" BoolType, Column "time_taken" StringType]
+              [ [IntegerValue 1, StringValue "The Hobbit (The Lord of the Rings, #0)", StringValue "J. R. R. Tolkien", IntegerValue 1937, BoolValue True, StringValue "2023-11-20 13:09:01.378811888 UTC"],
+                [IntegerValue 3, StringValue "Pet Sematary", StringValue "Stephen King", IntegerValue 1983, BoolValue True, StringValue "2023-11-27 11:18:22.691749541 UTC"],
+                [IntegerValue 4, StringValue "The Shining", StringValue "Stephen King", IntegerValue 1977, BoolValue True, StringValue "2023-11-18 15:43:02.232016126 UTC"]
+              ]
+          )
 
 runExecuteIO :: Lib3.Execution r -> IO r
 runExecuteIO (Pure r) = return r
@@ -137,20 +153,26 @@ runExecuteIO (Free step) = do
   where
     -- probably you will want to extend the interpreter
     runStep :: Lib3.ExecutionAlgebra a -> IO a
-    runStep (Lib3.GetTime next) = getCurrentTime >>= return . next
-    runStep (Lib3.LoadFile path next) = do
-      exists <- doesFileExist path
-      exists2 <- doesFileExist $ "src/" ++ path
-      let finalPath = if exists then path else if exists2 then "src/" ++ path else error $ "File not found: " ++ path
+    runStep (Lib3.GetTime next) = return fixedUTCTime >>= return . next
+    runStep (Lib3.LoadFile next) = do
+      exists <- doesFileExist "db/tablesTest.yaml"
+      exists2 <- doesFileExist $ "src/" ++ "db/tablesTest.yaml"
+      let finalPath
+            | exists = "db/tablesTest.yaml"
+            | exists2 = "src/" ++ "db/tablesTest.yaml" 
+            | otherwise = error $ "File not found: " ++ "db/tablesTest.yaml"
       fileContents <- readFile finalPath
       withFile finalPath ReadMode $ \handle -> hClose handle
       return $ next fileContents
-    runStep (Lib3.SaveFile path fileContents next) = do
-      writeFile path fileContents
+    runStep (Lib3.SaveFile fileContents next) = do
+      writeFile "db/tablesTestSave.yaml" fileContents
       return next
-    runStep (Lib3.DeleteFile path next) = do
-      removeFile path
+    runStep (Lib3.DeleteFile next) = do
+      removeFile "db/tablesTestSave.yaml"
       return next
-    runStep (Lib3.RenameFile pathSrc pathDst next) = do
-      renameFile pathSrc pathDst
+    runStep (Lib3.RenameFile next) = do
+      renameFile "db/tablesTestSave.yaml" "db/tablesTestSave.yaml"
       return next
+
+fixedUTCTime :: UTCTime
+fixedUTCTime = UTCTime (fromGregorian 2023 11 27) (secondsToDiffTime 43200) -- 2023-11-27 12:00:00
