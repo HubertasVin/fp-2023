@@ -45,33 +45,33 @@ main = hspec $ do
       Lib1.renderDataFrameAsTable 100 (snd D.tableEmployees) `shouldSatisfy` not . null
   describe "Lib2.parseStatement" $ do
     it "Parses SHOW TABLES statement" $ do
-      Lib2.parseStatement "SHOW TABLES" `shouldBe` Right ShowTables
+      Lib2.parseStatement "SHOW TABLES" "No current time. You have to run \"stack run fp2023-manipulate\" to use the agregate function \"now()\"." `shouldBe` Right ShowTables
     it "Parses SHOW TABLE statement" $ do
-      Lib2.parseStatement "show table flags" `shouldBe` Right (ShowTable "flags")
+      Lib2.parseStatement "show table flags" "No current time. You have to run \"stack run fp2023-manipulate\" to use the agregate function \"now()\"." `shouldBe` Right (ShowTable "flags")
     it "Parses SELECT id FROM statement" $ do
-      Lib2.parseStatement "SELECT id FROM employees" `shouldBe` Right (Select ["id"] ["employees"] Nothing Nothing)
+      Lib2.parseStatement "SELECT id FROM employees" "No current time. You have to run \"stack run fp2023-manipulate\" to use the agregate function \"now()\"." `shouldBe` Right (Select ["id"] ["employees"] Nothing Nothing)
     it "Parses SELECT statement with case-sensitive columns and table names, ignoring SQL keyword case" $ do
-      Lib2.parseStatement "SelecT Id FroM Employees" `shouldBe` Right (Select ["Id"] ["Employees"] Nothing Nothing)
+      Lib2.parseStatement "SelecT Id FroM Employees" "No current time. You have to run \"stack run fp2023-manipulate\" to use the agregate function \"now()\"." `shouldBe` Right (Select ["Id"] ["Employees"] Nothing Nothing)
     it "Handles empty input" $ do
-      Lib2.parseStatement "" `shouldSatisfy` isLeft
+      Lib2.parseStatement "" "No current time. You have to run \"stack run fp2023-manipulate\" to use the agregate function \"now()\"." `shouldSatisfy` isLeft
     it "Handles not supported statements" $ do
-      Lib2.parseStatement "wrong statement" `shouldSatisfy` isLeft
+      Lib2.parseStatement "wrong statement" "No current time. You have to run \"stack run fp2023-manipulate\" to use the agregate function \"now()\"." `shouldSatisfy` isLeft
     it "Handles empty select input" $ do
-      Lib2.parseStatement "select" `shouldSatisfy` isLeft
+      Lib2.parseStatement "select" "No current time. You have to run \"stack run fp2023-manipulate\" to use the agregate function \"now()\"." `shouldSatisfy` isLeft
     it "Works with WHERE statements" $ do
-      Lib2.parseStatement "select * from employees where id = 1" `shouldBe` Right (Select ["*"] ["employees"] (Just [Operator "id" "=" (IntegerValue 1)]) Nothing)
+      Lib2.parseStatement "select * from employees where id = 1" "No current time. You have to run \"stack run fp2023-manipulate\" to use the agregate function \"now()\"." `shouldBe` Right (Select ["*"] ["employees"] (Just [Operator "id" "=" (IntegerValue 1)]) Nothing)
     it "WHERE statements work with strings" $ do
-      Lib2.parseStatement "select * from employees where name = \"Vi\"" `shouldBe` Right (Select ["*"] ["employees"] (Just [Operator "name" "=" (StringValue "Vi")]) Nothing)
+      Lib2.parseStatement "select * from employees where name = \"Vi\"" "No current time. You have to run \"stack run fp2023-manipulate\" to use the agregate function \"now()\"." `shouldBe` Right (Select ["*"] ["employees"] (Just [Operator "name" "=" (StringValue "Vi")]) Nothing)
     it "Works with WHERE statements with multiple ANDs" $ do
-      Lib2.parseStatement "select * from employees where id > 1 and name = \"Vi\" and surname = \"Po\"" `shouldBe` Right (Select ["*"] ["employees"] (Just [Operator "id" ">" (IntegerValue 1), Operator "name" "=" (StringValue "Vi"), Operator "surname" "=" (StringValue "Po")]) Nothing)
+      Lib2.parseStatement "select * from employees where id > 1 and name = \"Vi\" and surname = \"Po\"" "No current time. You have to run \"stack run fp2023-manipulate\" to use the agregate function \"now()\"." `shouldBe` Right (Select ["*"] ["employees"] (Just [Operator "id" ">" (IntegerValue 1), Operator "name" "=" (StringValue "Vi"), Operator "surname" "=" (StringValue "Po")]) Nothing)
     it "Handles where statement with incompatible operator" $ do
-      Lib2.parseStatement "select * from employees where id is 1" `shouldSatisfy` isLeft
+      Lib2.parseStatement "select * from employees where id is 1" "No current time. You have to run \"stack run fp2023-manipulate\" to use the agregate function \"now()\"." `shouldSatisfy` isLeft
     it "Handles incorrect where syntax" $ do
-      Lib2.parseStatement "select * from employees where" `shouldSatisfy` isLeft
+      Lib2.parseStatement "select * from employees where" "No current time. You have to run \"stack run fp2023-manipulate\" to use the agregate function \"now()\"." `shouldSatisfy` isLeft
     it "Handles update" $ do
-      Lib2.parseStatement "update employees set id = 6 name = \"Ka\" surname = \"Mi\" where name = \"Vi\"" `shouldBe` Right (Update "employees" [("id", IntegerValue 6), ("name", StringValue "Ka"), ("surname", StringValue "Mi")] (Just [Operator "name" "=" (StringValue "Vi")]))
+      Lib2.parseStatement "update employees set id = 6 name = \"Ka\" surname = \"Mi\" where name = \"Vi\"" "No current time. You have to run \"stack run fp2023-manipulate\" to use the agregate function \"now()\"." `shouldBe` Right (Update "employees" [("id", IntegerValue 6), ("name", StringValue "Ka"), ("surname", StringValue "Mi")] (Just [Operator "name" "=" (StringValue "Vi")]))
     it "Handles insert" $ do
-      Lib2.parseStatement "INSERT INTO employees (id, name, surname) VALUES (5, 'Alice', 'Johnson')" `shouldSatisfy` isLeft
+      Lib2.parseStatement "INSERT INTO employees (id, name, surname) VALUES (5, 'Alice', 'Johnson')" "No current time. You have to run \"stack run fp2023-manipulate\" to use the agregate function \"now()\"." `shouldSatisfy` isLeft
   -- it "Handles delete" $ do
   --   Lib2.parseStatement "delete from employees where " `shouldSatisfy` isRight
   describe "Lib2.executeStatement" $ do
@@ -126,7 +126,7 @@ main = hspec $ do
       result <- runExecuteIO $ Lib3.executeSql "select * from specimen where time_taken < now();"
       result `shouldBe` Right (DataFrame [Column "isbn" IntegerType, Column "title" StringType, Column "author" StringType, Column "year" IntegerType, Column "taken" BoolType, Column "time_taken" StringType] [
         [IntegerValue 1, StringValue "The Hobbit (The Lord of the Rings, #0)", StringValue "J. R. R. Tolkien", IntegerValue 1937, BoolValue True, StringValue "2023-11-20 13:09:01.378811888 UTC"], 
-        [IntegerValue 3, StringValue "Pet Sematary", StringValue "Stephen King", IntegerValue 1983, BoolValue False, StringValue "2023-11-27 11:18:22.691749541 UTC"],
+        [IntegerValue 3, StringValue "Pet Sematary", StringValue "Stephen King", IntegerValue 1983, BoolValue True, StringValue "2023-11-27 11:18:22.691749541 UTC"],
         [IntegerValue 4, StringValue "The Shining", StringValue "Stephen King", IntegerValue 1977, BoolValue True, StringValue "2023-11-18 15:43:02.232016126 UTC"]])
 
 runExecuteIO :: Lib3.Execution r -> IO r

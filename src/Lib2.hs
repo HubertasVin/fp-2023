@@ -155,13 +155,10 @@ parseWhereConditions ("and" : rest) getTime
 
 parseWhereConditions (colName : op : value : rest) getTime
   | not (null rest) && head rest /= "and" = Left "Invalid WHERE statement"
+  | op `notElem` ["=", "/=", "<>", "<", ">", "<=", ">="] = Left "Invalid operator"
   | head value == '\"' && last value == '\"' = do
-      let stringValue = init (tail value)
-      case op of
-        "=" -> parseOperator colName op (StringValue stringValue) rest
-        "/=" -> parseOperator colName "/=" (StringValue stringValue) rest
-        "<>" -> parseOperator colName "<>" (StringValue stringValue) rest
-        _ -> Left "Invalid operator for string value"
+    let stringValue = init (tail value)
+    parseOperator colName op (StringValue stringValue) rest
   | value `toLowerPrefix` "now()" = parseOperator colName op (StringValue getTime) rest
   | otherwise = case readMaybe value of
     Just intValue -> parseOperator colName op (IntegerValue intValue) rest
