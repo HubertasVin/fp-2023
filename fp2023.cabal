@@ -49,18 +49,18 @@ library
       ImportQualifiedPost
   ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-export-lists -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints
   build-depends:
-      base >=4.7 && <5
-    , free
-    , yaml
-    , vector
-    , unordered-containers
-    , text
+      aeson
+    , base >=4.7 && <5
     , bytestring
-    , parsec
-    , aeson
     , directory
+    , free
+    , parsec
+    , text
     , time
     , transformers
+    , unordered-containers
+    , vector
+    , yaml
   default-language: Haskell2010
 
 executable fp2023-manipulate
@@ -73,21 +73,21 @@ executable fp2023-manipulate
       ImportQualifiedPost
   ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-export-lists -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints -threaded -rtsopts -with-rtsopts=-N
   build-depends:
-      base >=4.7 && <5
+      aeson
+    , base >=4.7 && <5
+    , bytestring
+    , directory
     , extra
     , fp2023
     , free
-    , yaml
-    , vector
-    , unordered-containers
-    , text
-    , bytestring
     , parsec
-    , aeson
-    , directory
     , repline
     , terminal-size
+    , text
     , time
+    , unordered-containers
+    , vector
+    , yaml
   default-language: Haskell2010
 
 executable fp2023-select-all
@@ -135,17 +135,17 @@ test-suite fp2023-test
       ImportQualifiedPost
   ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-export-lists -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints -threaded -rtsopts -with-rtsopts=-N
   build-depends:
-      base >=4.7 && <5
-    , free
-    , time
-    , yaml
-    , vector
-    , unordered-containers
-    , text
+      aeson
+    , base >=4.7 && <5
     , bytestring
-    , parsec
-    , aeson
     , directory
     , fp2023
+    , free
     , hspec
+    , parsec
+    , text
+    , time
+    , unordered-containers
+    , vector
+    , yaml
   default-language: Haskell2010

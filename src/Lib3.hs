@@ -38,7 +38,6 @@ data ExecutionAlgebra next
   | DeleteFile FilePath next
   | RenameFile FilePath FilePath next
   | GetTime (UTCTime -> next)
-  -- feel free to add more constructors here
   deriving (Functor)
 
 data YamlData = YamlData { tables :: [YamlTable] } deriving (Show)
@@ -92,6 +91,7 @@ executeSql sql = case parseStatement sql of
         return $ case result of
           Left err -> Left err
           Right df -> Right df
+
 
 
 -- TODO Convert Database to Yaml string
