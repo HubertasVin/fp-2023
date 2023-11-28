@@ -1,8 +1,10 @@
 {-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# OPTIONS_GHC -Wno-unused-imports #-}
 
 module Lib3
   ( executeSql,
+    getColumnName,
     Execution,
     ExecutionAlgebra (..),
   )
@@ -13,7 +15,7 @@ import Data.Text.Encoding (encodeUtf8)
 import qualified Data.Vector as V
 import qualified Data.Text as T
 import Control.Monad.Free (Free (..), liftF)
-import Data.List (find, isPrefixOf, intercalate, dropWhileEnd, delete)
+import Data.List (intercalate)
 import Data.Time (UTCTime)
 import DataFrame (Column (..), ColumnType (..), DataFrame (..), Row, Value (..))
 import Lib2
@@ -65,45 +67,44 @@ getTime :: Execution UTCTime
 getTime = liftF $ GetTime id
 
 executeSql :: String -> Execution (Either ErrorMessage DataFrame)
-executeSql sql = case parseStatement sql of
-  Left err -> return $ Left err
-  Right statement -> do
-    employeeTableContents <- loadFile "db/tables.yaml"
-    let generatedDatabase = yamlToDatabase employeeTableContents
-    case statement of
-      LoadDatabase -> do
-        let result = executeStatement statement (unDatabase generatedDatabase)
-        return $ case result of
-          Left err -> Left $ databaseToYaml generatedDatabase ++ "\n" ++ err
-          Right df -> Right df
-      SaveDatabase path -> do
-        let result = executeStatement statement (unDatabase generatedDatabase)
-        saveFile "db/tablesTemp.yaml" (databaseToYaml generatedDatabase)
-        deleteFile path
-        renameFile "db/tablesTemp.yaml" path
-        return $ case result of
-          Left err -> Left err
-          Right df -> Right df
-      (Now columnNames tableName maybeOperator) -> do
-        currentTime <- getTime
-        return $ Right $ DataFrame [Column "CurrentTime" StringType] [[StringValue (show currentTime)]]
-      _ -> do
-        let result = executeStatement statement (unDatabase generatedDatabase)
-        return $ case result of
-          Left err -> Left err
-          Right df -> Right df
+executeSql sql = do
+  currentTime <- getTime
+  case parseStatement sql (show currentTime) of
+    Left err -> return $ Left err
+    Right statement -> do
+      employeeTableContents <- loadFile "db/tables.yaml"
+      let generatedDatabase = yamlToDatabase employeeTableContents
+      case statement of
+        LoadDatabase -> do
+          let result = executeStatement statement (unDatabase generatedDatabase) (show currentTime)
+          return $ case result of
+            Left err -> Left $ databaseToYaml generatedDatabase ++ "\n" ++ err
+            Right df -> Right df
+        SaveDatabase path -> do
+          let result = executeStatement statement (unDatabase generatedDatabase) (show currentTime)
+          saveFile "db/tablesTemp.yaml" (databaseToYaml generatedDatabase)
+          deleteFile path
+          renameFile "db/tablesTemp.yaml" path
+          return $ case result of
+            Left err -> Left err
+            Right df -> Right df
+        _ -> do
+          let result = executeStatement statement (unDatabase generatedDatabase) (show currentTime)
+          return $ case result of
+            Left err -> Left err
+            Right df -> Right df
 
 
 -- TODO Convert Database to Yaml string
 databaseToString :: Database -> String
-databaseToString (Database tables) = unlines $ map tableToString tables
+databaseToString (Database tables) = unlines $ map outerTableToString tables
   where
-    tableToString :: Table -> String
-    tableToString (tableName, DataFrame columns rows) =
-      unlines $ map tableToString [(tableName, columns, rows)]
+    outerTableToString :: Table -> String
+    outerTableToString (tableName, DataFrame columns rows) =
+      unlines [innerTableToString (tableName, columns, rows)]
       where
-        tableToString :: (String, [DataFrame.Column], [Row]) -> String
-        tableToString (tableName1, columns1, rows1) =
+        innerTableToString :: (String, [DataFrame.Column], [Row]) -> String
+        innerTableToString (tableName1, columns1, rows1) =
           "- table: "
             ++ tableName1
             ++ "\n"
@@ -200,15 +201,14 @@ parseTable _ = fail "Invalid table format"
 
 -- TODO Convert Database to YAML string
 databaseToYaml :: Database -> String
-databaseToYaml (Database tables) = unlines $ map tableToYaml tables
+databaseToYaml (Database tables) = unlines $ map outerTableToYaml tables
 
-
-tableToYaml :: Table -> String
-tableToYaml (tableName, DataFrame columns rows) =
-  unlines $ map tableToYaml [(tableName, columns, rows)]
+outerTableToYaml :: Table -> String
+outerTableToYaml (tableName, DataFrame columns rows) =
+  unlines [innerTableToYaml (tableName, columns, rows)]
   where
-    tableToYaml :: (String, [DataFrame.Column], [Row]) -> String
-    tableToYaml (tableName1, columns1, rows1) =
+    innerTableToYaml :: (String, [DataFrame.Column], [Row]) -> String
+    innerTableToYaml (tableName1, columns1, rows1) =
       "- table: "
         ++ tableName1
         ++ "\n"
