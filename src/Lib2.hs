@@ -10,11 +10,11 @@ module Lib2
   )
 where
 
-import Data.Char (isDigit, isSpace, toLower)
+import Data.Char (isSpace, toLower)
 import Data.List (elemIndex, find, findIndex, isPrefixOf, intercalate)
 import Data.Maybe (fromJust, fromMaybe)
 import DataFrame (Column (..), ColumnType (..), DataFrame (..), Row (..), Value (..))
-import InMemoryTables (TableName, database)
+import InMemoryTables (TableName)
 import Lib1 ()
 import Text.Read (readMaybe)
 
@@ -96,9 +96,6 @@ splitCommaSeparated :: String -> [String]
 splitCommaSeparated str = map trimWhitespace $ splitOnComma str
   where
     splitOnComma = words . map (\c -> if c == ',' then ' ' else c)
-    trimSpace = f . f
-      where
-        f = reverse . dropWhile isSpace
 
 parseJoinCondition :: [String] -> (Maybe String, [String])
 parseJoinCondition whereClause =
@@ -406,7 +403,10 @@ joinTablesOnCondition mergedDF joinCondition =
    in DataFrame columnsWithoutRedundant adjustedRows
 
 removeElementAt :: Int -> [a] -> [a]
-removeElementAt idx xs = let (left, (_ : right)) = splitAt idx xs in left ++ right
+removeElementAt idx xs = let (left, right) = splitAt idx xs in 
+  case right of
+    [] -> left
+    (_ : rest) -> left ++ rest
 
 removeRedundantColumn :: [Column] -> String -> [Column]
 removeRedundantColumn columns colToRemove =
