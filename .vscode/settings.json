@@ -7,12 +7,12 @@
         "stack": "2.9.3"
     },
     "files.exclude": {
-        ".vscode": true,
-        ".stack-work": true,
-        ".github": true,
-        ".devcontainer": true,
-        "stack.yaml.lock": true,
-        "CHANGELOG.md": true,
-        ".history": true
+        ".vscode": false,
+        ".stack-work": false,
+        ".github": false,
+        ".devcontainer": false,
+        "stack.yaml.lock": false,
+        "CHANGELOG.md": false,
+        ".history": false
     }
 }

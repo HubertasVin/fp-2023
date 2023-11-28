@@ -42,7 +42,7 @@ cmd c = do
     cmd' :: Integer -> Either String String
     cmd' s = do
       stmt <- Lib2.parseStatement c
-      df <- Lib2.executeStatement stmt database
+      df <- Lib2.executeStatement stmt database "No current time. You have to run \"stack run fp2023-manipulate\" to use the agregate function \"now()\"."
       _ <- Lib1.validateDataFrame df
       return $ Lib1.renderDataFrameAsTable s df
 
