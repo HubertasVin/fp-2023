@@ -8,6 +8,10 @@ module Lib2
   ( parseStatement,
     getColumnName,
     executeStatement,
+    getColumns,
+    getRows,
+    evalCondition,
+    maybeTableToEither,
     Operator (..),
     ParsedStatement (..),
   )
@@ -35,14 +39,23 @@ data ParsedStatement
   | ShowTable TableName
   | Select [String] [TableName] (Maybe [Operator]) (Maybe String)
   | LoadDatabase
-  | SaveDatabase FilePath
+  | SaveDatabase
   | Update TableName [(String, Value)] (Maybe [Operator])
-  | Insert TableName [String]
+  | Insert TableName [(String, Value)]
   | Delete TableName (Maybe [Operator])
   | Now [String] TableName (Maybe [Operator])
   | ParsedStatement
   | Where [Operator]
   deriving (Show, Eq)
+
+-- instance Show Value where
+--   show (StringValue s) = s
+--   show (IntegerValue i) = show i
+
+-- instance Eq Value where
+--   (StringValue s1) == (StringValue s2) = s1 == s2
+--   (IntegerValue i1) == (IntegerValue i2) = i1 == i2
+--   _ == _ = False
 
 instance Ord Value where
   compare (StringValue s1) (StringValue s2) = compare s1 s2
@@ -82,27 +95,41 @@ parseStatement input getTime
                         _ -> Right (Select splitCols tableNameList Nothing Nothing)
                 _ -> Left "Invalid SELECT statement"
             "update" : table : rest ->
-              case dropWhile (/= "set") rest of
-                "set" : assignments -> do
+              case span (/= "set") rest of
+                (_, "set" : assignments) -> do
                   (values, remaining) <- parseUpdateAssignments assignments
                   (conditions, _) <- parseWhereConditions remaining getTime
                   Right (Update table values (Just conditions))
                 _ -> Left "Invalid UPDATE statement"
             "insert" : "into" : tableName : rest ->
               case break (== "values") rest of
-                (_, "values" : values) ->
+                (columnNames, "values" : values) -> do
                   let valueList = splitCommaSeparated (unwords values)
-                  in Right (Insert tableName valueList)
+                      colNameList = splitCommaSeparated (unwords columnNames)
+                      assignmentValues = (combineColumnNamesAndValues colNameList valueList)
+                  Right (Insert tableName assignmentValues)
                 _ -> Left "Invalid INSERT statement"
             "delete" : "from" : tableName : rest ->
               case break (== "where") rest of
                 (_, "where" : conditions) -> do
-                  (parsedConditions, _) <- parseWhereConditions conditions
+                  (parsedConditions, _) <- parseWhereConditions conditions getTime
                   Right (Delete tableName (Just parsedConditions))
                 _ -> Left "Invalid DELETE statement"
             _ -> Left "Not supported statement"
 
 
+
+
+combineColumnNamesAndValues :: [String] -> [String] -> [(String, Value)]
+combineColumnNamesAndValues [] [] = []
+combineColumnNamesAndValues (colName : colNames) (value : values) =
+  case parseValue (removeBracket value) of
+    Right v -> (removeBracket colName, v) : combineColumnNamesAndValues colNames values
+    Left errMsg -> error $ "Invalid value: " ++ value ++ " " ++ errMsg
+combineColumnNamesAndValues _ _ = [] -- Handle the case where the input lists have different lengths
+
+removeBracket :: String -> String
+removeBracket = filter (\c -> c /= '(' && c /= ')')
 
 
 splitCommaSeparated :: String -> [String]
@@ -144,7 +171,7 @@ parseValue s
             "true" -> Right (BoolValue True)
             "false" -> Right (BoolValue False)
             "null" -> Right NullValue
-            _ -> Left $ "Invalid value" ++ s
+            _ -> Left $ "Invalid value: " ++ s
 
 parseUpdateAssignments :: [String] -> Either ErrorMessage ([(String, Value)], [String])
 parseUpdateAssignments [] = Left "Invalid UPDATE statement"
@@ -162,7 +189,6 @@ parseWhereConditions ("and" : rest) getTime
   | otherwise = do
       (operators, remaining) <- parseWhereConditions rest getTime
       Right (operators, remaining)
-
 parseWhereConditions (colName : op : value : rest) getTime
   | not (null rest) && head rest /= "and" = Left "Invalid WHERE statement"
   | op `notElem` ["=", "/=", "<>", "<", ">", "<=", ">="] = Left "Invalid operator"
@@ -197,7 +223,6 @@ parseWhereConditions (colName : op : value : rest) getTime
       "NULL" -> parseOperator col "/=" NullValue remaining
       _ | isLikelyColumnName val -> parseOperator col "/=" (StringValue val) remaining
         | otherwise -> Left "Invalid value for inequality operator"
-
 parseWhereConditions _ _ = Right ([], [])
 
 
@@ -259,13 +284,13 @@ executeStatement (Select columnNames tableNames maybeOperator maybeJoinCondition
               | otherwise = map (\row -> map (row !!) selectedIndices) filteredRows
         Right $ DataFrame selectedCols selectedRows
       Nothing -> Left "Table(-s) not found"
-executeStatement (Update tableName values maybeConditions) database getTime = do
+{- executeStatement (Update tableName values maybeConditions) database getTime = do
   existingTable <- maybeTableToEither (lookup tableName database)
   let updatedRows = updateRows values maybeConditions (getRows existingTable)
   Right $ DataFrame (getColumns existingTable) updatedRows
 executeStatement (Insert tableName values) database getTime = do
   existingTable <- maybeTableToEither (lookup tableName database)
-  let newRows = map (\row -> row ++ map StringValue values) (getRows existingTable)
+  let newRows = map (\row -> row ++ map (StringValue . snd) values) (getRows existingTable)
   Right $ DataFrame (getColumns existingTable) newRows
 executeStatement (Delete tableName maybeConditions) database getTime = do
   existingTable <- maybeTableToEither (lookup tableName database)
@@ -273,7 +298,7 @@ executeStatement (Delete tableName maybeConditions) database getTime = do
         Just conditions -> filter (evalConditionOnRow conditions existingTable) (getRows existingTable)
         Nothing -> []
   let remainingRows = filter (`notElem` deletedRows) (getRows existingTable)
-  Right $ DataFrame (getColumns existingTable) remainingRows
+  Right $ DataFrame (getColumns existingTable) remainingRows -}
 executeStatement _ _ _ = Left "Not implemented"
 
 dataframeToString :: DataFrame -> String
@@ -290,21 +315,6 @@ dataframeToString df =
               )
       )
       (getRows df)
-
-updateRows :: [(String, Value)] -> Maybe [Operator] -> [Row] -> [Row]
-updateRows _ _ [] = []
-updateRows values maybeConditions (row : rows) =
-  let existingTable = DataFrame (getColumns existingTable) [row]
-   in if all (\(Operator colName op val) -> evalCondition colName op val existingTable row) (fromMaybe [] maybeConditions)
-        then updateRow values existingTable row : updateRows values maybeConditions rows
-        else row : updateRows values maybeConditions rows
-
-updateRow :: [(String, Value)] -> DataFrame -> Row -> Row
-updateRow [] _ row = row
-updateRow ((colName, newValue) : rest) existingTable row =
-  case findIndex (\(Column name _) -> name == colName) (getColumns existingTable) of
-    Just index -> updateRow rest existingTable (take index row ++ [newValue] ++ drop (index + 1) row)
-    Nothing -> updateRow rest existingTable row
 
 evalConditionOnRow :: [Operator] -> DataFrame -> Row -> Bool
 evalConditionOnRow conditions df row = all (\cond -> evalConditionOnRow' cond df row) conditions
@@ -393,7 +403,6 @@ selectRow :: DataFrame -> [Column] -> Row -> Row
 selectRow df selectedCols row = map (\col -> row !! columnIndex df col) selectedCols
 
 evalCondition :: String -> String -> Value -> DataFrame -> Row -> Bool
--- evalCondition "and" colName val df row = any (\cond -> evalCondition cond df row) conditions
 evalCondition colName "=" val df row =
   case val of
     StringValue otherColName

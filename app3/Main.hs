@@ -16,7 +16,7 @@ import System.Console.Repline
     evalRepl,
   )
 import System.Console.Terminal.Size (Window, size, width)
-import System.Directory (doesFileExist, removeFile, renameFile)
+import System.Directory (doesFileExist, removeFile, renameFile, copyFile)
 import System.IO (IOMode (ReadMode), hClose, withFile)
 
 type Repl a = HaskelineT IO a
@@ -131,4 +131,17 @@ runExecuteIO (Free step) = do
             | existsDst2 = "src/" ++ pathDst
             | otherwise = error $ "File not found: " ++ pathDst
       renameFile finalPathSrc finalPathDst
+      return next
+    runStep (Lib3.CopyFile next) = do
+      let pathSrc = "db/tables.yaml"
+      let pathDst = "db/tablesTemp.yaml"
+      existsSrc <- doesFileExist pathSrc
+      existsSrc2 <- doesFileExist $ "src/" ++ pathSrc
+      existsDst <- doesFileExist pathDst
+      existsDst2 <- doesFileExist $ "src/" ++ pathDst
+      let finalPathSrc
+            | existsSrc = pathSrc
+            | existsSrc2 = "src/" ++ pathSrc
+            | otherwise = error $ "File not found: " ++ pathSrc
+      copyFile finalPathSrc pathDst
       return next

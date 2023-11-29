@@ -15,13 +15,16 @@ import Data.Text.Encoding (encodeUtf8)
 import qualified Data.Vector as V
 import qualified Data.Text as T
 import Control.Monad.Free (Free (..), liftF)
-import Data.List (intercalate)
+import Data.List (findIndex, intercalate)
 import Data.Time (UTCTime)
 import DataFrame (Column (..), ColumnType (..), DataFrame (..), Row, Value (..))
 import Lib2
 import Data.Char (toLower)
 import Data.Maybe
 import GHC.IO.Device (IODevice(close))
+import qualified InMemoryTables
+import Data.Text (replace)
+import Data.HashMap.Internal.Array (update)
 
 type TableName = String
 
@@ -39,6 +42,7 @@ data ExecutionAlgebra next
   | SaveFile FileContent next
   | DeleteFile next
   | RenameFile next
+  | CopyFile next
   | GetTime (UTCTime -> next)
   deriving (Functor)
 
@@ -62,51 +66,164 @@ deleteFile = liftF $ DeleteFile ()
 renameFile :: Execution ()
 renameFile = liftF $ RenameFile ()
 
+copyFile :: Execution ()
+copyFile = liftF $ CopyFile ()
+
 getTime :: Execution UTCTime
 getTime = liftF $ GetTime id
 
 executeSql :: String -> Execution (Either ErrorMessage DataFrame)
 executeSql sql = do
   currentTime <- getTime
-  case parseStatement sql of
+  case parseStatement sql (show currentTime) of
     Left err -> return $ Left err
     Right statement -> do
-      employeeTableContents <- loadFile "db/tables.yaml"
-      let generatedDatabase = yamlToDatabase employeeTableContents
+      tableContents <- loadFile
+      let generatedDatabase = yamlToDatabase tableContents
       case statement of
-        LoadDatabase -> do
-          let result = executeStatement statement (unDatabase generatedDatabase) (show currentTime)
-          return $ case result of
-            Left err -> Left $ databaseToYaml generatedDatabase ++ "\n" ++ err
-            Right df -> Right df
-        SaveDatabase path -> do
-          let result = executeStatement statement (unDatabase generatedDatabase) (show currentTime)
-          saveFile (databaseToYaml generatedDatabase)
-          deleteFile
-          renameFile
-          return $ case result of
-            Left err -> Left err
-            Right df -> Right df
+        Update tableName values conditions -> do
+          let existingTable = maybeTableToEither (lookup tableName (getTables generatedDatabase))
+          case existingTable of
+            Left _ -> return $ Left $ "Table not found: " ++ tableName
+            Right df -> do
+              let updatedRows = updateRows values df (fromJust conditions) (getRows df)
+              case updatedRows of
+                Left err -> return $ Left err
+                Right updatedRows ->
+                  let updatedDatabase = updateDatabaseWithDataFrame generatedDatabase (tableName, DataFrame (getColumns df) updatedRows)
+                  in do
+                  saveFile (databaseToYaml updatedDatabase)
+                  renameFile
+                  copyFile
+                  return $ Right $ DataFrame (getColumns df) updatedRows
         Insert tableName values -> do
-          let result = executeStatement statement (unDatabase generatedDatabase)
-          return $ case result of
-            Left err -> Left err
-            Right df -> Right df
+          let existingTable = maybeTableToEither (lookup tableName (getTables generatedDatabase))
+          case existingTable of
+            Left _ -> return $ Left $ "Table not found: " ++ tableName
+            Right df -> do
+              let insertedRow = insertRow values df
+              case insertedRow of
+                Left err -> return $ Left err
+                Right insertedRow ->
+                  let updatedDatabase = updateDatabaseWithDataFrame generatedDatabase (tableName, DataFrame (getColumns df) (getRows df ++ [insertedRow]))
+                  in do
+                  saveFile (databaseToYaml updatedDatabase)
+                  renameFile
+                  copyFile
+                  return $ Right $ DataFrame (getColumns df) (getRows df ++ [insertedRow])
         Delete tableName conditions -> do
-          let result = executeStatement statement (unDatabase generatedDatabase)
-          return $ case result of
-            Left err -> Left err
-            Right df -> Right df
-        Update table values conditions -> do
-          let result = executeStatement statement (unDatabase generatedDatabase)
-          return $ case result of
-            Left err -> Left err
-            Right df -> Right df
+          let existingTable = maybeTableToEither (lookup tableName (getTables generatedDatabase))
+          case existingTable of
+            Left _ -> return $ Left $ "Table not found: " ++ tableName
+            Right df -> do
+              let updatedRows = removeRows (fromJust conditions) df
+              case updatedRows of
+                Left err -> return $ Left err
+                Right updatedRows ->
+                  let updatedDatabase = updateDatabaseWithDataFrame generatedDatabase (tableName, DataFrame (getColumns df) (getRows updatedRows))
+                  in do
+                  saveFile (databaseToYaml updatedDatabase)
+                  renameFile
+                  copyFile
+                  return $ Right $ DataFrame (getColumns df) (getRows updatedRows)
         _ -> do
-          let result = executeStatement statement (unDatabase generatedDatabase)
+          let result = executeStatement statement (unDatabase generatedDatabase) (show currentTime)
           return $ case result of
             Left err -> Left err
             Right df -> Right df
+
+
+-- Update database
+updateDatabaseWithDataFrame :: Database -> Table -> Database
+updateDatabaseWithDataFrame (Database tables) (tableName, dataFrame)
+  | isNothing index = Database (tables ++ [(tableName, dataFrame)])
+  | otherwise = Database (take (fromJust index) tables ++ [(tableName, dataFrame)] ++ drop (fromJust index + 1) tables)
+  where
+    index = findIndex (\(tableName1, _) -> tableName1 == tableName) tables
+
+
+-- TODO Implement UPDATE statement
+updateRows :: [(String, DataFrame.Value)] -> DataFrame -> [Operator] -> [Row] -> Either ErrorMessage [Row]
+updateRows _ _ [] rows = Right rows
+updateRows values df (condition:xs) rows = do
+  updatedRows <- updateRows' values df condition rows
+  updateRows values df xs updatedRows
+
+updateRows' :: [(String, DataFrame.Value)] -> DataFrame -> Operator -> [Row] -> Either ErrorMessage [Row]
+updateRows' _ _ (Operator {}) [] = Right []
+updateRows' values df (Operator columnName operator value) (row : rows)
+  | evalCondition columnName operator value df row = do
+    updatedRow <- updateRow values df row
+    updatedRows <- updateRows' values df (Operator columnName operator value) rows
+    return $ updatedRow : updatedRows
+  | otherwise = do
+    updatedRows <- updateRows' values df (Operator columnName operator value) rows
+    return $ row : updatedRows
+
+updateRow :: [(String, DataFrame.Value)] -> DataFrame -> Row -> Either ErrorMessage Row
+updateRow [] _ row = Right row
+updateRow ((columnName, value):xs) df row =
+  if isNothing index
+    then Left $ "Column not found: " ++ columnName
+    else case replaceValueByIndex (fromJust index) value row of
+      Left errorMessage -> Left errorMessage
+      Right updatedRow -> updateRow xs df updatedRow
+  where
+    index = getColumnIndex columnName df
+
+getColumnIndex :: String -> DataFrame -> Maybe Int
+getColumnIndex columnName df = findIndex (\(Column name _) -> name == columnName) (getColumns df)
+
+replaceValueByIndex :: Int -> DataFrame.Value -> Row -> Either ErrorMessage Row
+replaceValueByIndex index value row
+  | index < 0 || index >= length row = Left $ "Index out of bounds: " ++ show index
+  | not (compatibleTypes (row !! index) value) = Left $ "Incompatible value types: " ++ show (row !! index) ++ " " ++ show value
+  | otherwise = Right (take index row ++ [value] ++ drop (index + 1) row)
+
+-- Function to check if two values have compatible types
+compatibleTypes :: DataFrame.Value -> DataFrame.Value -> Bool
+compatibleTypes (IntegerValue _) (IntegerValue _) = True
+compatibleTypes (StringValue _) (StringValue _) = True
+compatibleTypes (BoolValue _) (BoolValue _) = True
+compatibleTypes NullValue _ = True
+compatibleTypes _ _ = False
+
+getValueType :: DataFrame.Value -> ColumnType
+getValueType (IntegerValue _) = IntegerType
+getValueType (StringValue _) = StringType
+getValueType (BoolValue _) = BoolType
+getValueType NullValue = error "NullValue has no type"
+
+
+
+-- TODO Implement INSERT statement
+insertRow :: [(String, DataFrame.Value)] -> DataFrame -> Either ErrorMessage Row
+insertRow values df = do
+  let newRow = replicate (length (getColumns df)) NullValue
+  updateRow values df newRow
+
+
+getColumnsListLength :: [DataFrame.Column] -> Int
+getColumnsListLength = foldr (\ x -> (+) 1) 0
+
+getRowsListLength :: [Row] -> Int
+getRowsListLength = foldr (\ x -> (+) 1) 0
+
+
+-- TODO Implement DELETE statement
+removeRows :: [Operator] -> DataFrame -> Either ErrorMessage DataFrame
+removeRows conditions df = do
+  updatedRows <- removeRows' (head conditions) df (getRows df)
+  return $ DataFrame (getColumns df) updatedRows
+
+removeRows' :: Operator -> DataFrame -> [Row] -> Either ErrorMessage [Row]
+removeRows' _ _ [] = Right []
+removeRows' (Operator columnName operator value) df (row : rows) =
+  if evalCondition columnName operator value df row
+    then removeRows' (Operator columnName operator value) df rows
+    else do
+      updatedRows <- removeRows' (Operator columnName operator value) df rows
+      return $ row : updatedRows
 
 
 -- TODO Convert Database to Yaml string
@@ -240,7 +357,7 @@ columnTypeToYaml BoolType = "BoolType"
 -- Function to convert Value to YAML string
 valueToYaml :: DataFrame.Value -> String
 valueToYaml (IntegerValue int) = show int
-valueToYaml (StringValue str) = str
+valueToYaml (StringValue str) = "\"" ++ str ++ "\""
 valueToYaml (BoolValue bool) = if bool then "true" else "false"
 valueToYaml NullValue = "null"
 
@@ -256,3 +373,9 @@ columnToYaml (Column name columnType) =
 -- Function to convert Row to YAML string
 rowToYaml :: Row -> String
 rowToYaml row = "    - [" ++ intercalate ", " (map valueToYaml row) ++ "]"
+
+
+
+-- TODO Miscelaneous functions
+getTables :: Database -> [(InMemoryTables.TableName, DataFrame)]
+getTables = unDatabase
