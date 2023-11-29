@@ -41,6 +41,15 @@ library:
   dependencies:
   - free
   - time
+  - time
+  - yaml
+  - vector
+  - unordered-containers
+  - text
+  - bytestring
+  - parsec
+  - aeson
+  - directory
   - transformers
 
 executables:
@@ -82,6 +91,12 @@ executables:
     - terminal-size
     - free
     - time
+    - yaml
+    - vector
+    - unordered-containers
+    - text
+    - aeson
+    - directory
 
 tests:
   fp2023-test:
@@ -93,4 +108,11 @@ tests:
     - -with-rtsopts=-N
     dependencies:
     - fp2023
+    - time
+    - yaml
+    - free
+    - vector
+    - unordered-containers
+    - aeson
+    - directory
     - hspec
