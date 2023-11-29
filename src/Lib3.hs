@@ -35,10 +35,10 @@ type Table = (TableName, DataFrame)
 type ErrorMessage = String
 
 data ExecutionAlgebra next
-  = LoadFile FilePath (FileContent -> next)
-  | SaveFile FilePath FileContent next
-  | DeleteFile FilePath next
-  | RenameFile FilePath FilePath next
+  = LoadFile (FileContent -> next)
+  | SaveFile FileContent next
+  | DeleteFile next
+  | RenameFile next
   | GetTime (UTCTime -> next)
   -- feel free to add more constructors here
   deriving (Functor)
@@ -51,17 +51,17 @@ type Execution = Free ExecutionAlgebra
 instance FromJSON Database where
   parseJSON = parseDatabase
 
-loadFile :: FilePath -> Execution FileContent
-loadFile path = liftF $ LoadFile path id
+loadFile :: Execution FileContent
+loadFile = liftF $ LoadFile id
 
-saveFile :: FilePath -> FileContent -> Execution ()
-saveFile path content = liftF $ SaveFile path content ()
+saveFile :: FileContent -> Execution ()
+saveFile content = liftF $ SaveFile content ()
 
-deleteFile :: FilePath -> Execution ()
-deleteFile path = liftF $ DeleteFile path ()
+deleteFile :: Execution ()
+deleteFile = liftF $ DeleteFile ()
 
-renameFile :: FilePath -> FilePath -> Execution ()
-renameFile pathSrc pathDst = liftF $ RenameFile pathSrc pathDst ()
+renameFile :: Execution ()
+renameFile = liftF $ RenameFile ()
 
 getTime :: Execution UTCTime
 getTime = liftF $ GetTime id
@@ -72,7 +72,7 @@ executeSql sql = do
   case parseStatement sql (show currentTime) of
     Left err -> return $ Left err
     Right statement -> do
-      employeeTableContents <- loadFile "db/tables.yaml"
+      employeeTableContents <- loadFile
       let generatedDatabase = yamlToDatabase employeeTableContents
       case statement of
         LoadDatabase -> do
@@ -82,9 +82,9 @@ executeSql sql = do
             Right df -> Right df
         SaveDatabase path -> do
           let result = executeStatement statement (unDatabase generatedDatabase) (show currentTime)
-          saveFile "db/tablesTemp.yaml" (databaseToYaml generatedDatabase)
-          deleteFile path
-          renameFile "db/tablesTemp.yaml" path
+          saveFile (databaseToYaml generatedDatabase)
+          deleteFile
+          renameFile
           return $ case result of
             Left err -> Left err
             Right df -> Right df

@@ -95,8 +95,6 @@ executables:
     - vector
     - unordered-containers
     - text
-    - bytestring
-    - parsec
     - aeson
     - directory
 
@@ -109,15 +107,12 @@ tests:
     - -rtsopts
     - -with-rtsopts=-N
     dependencies:
+    - fp2023
     - time
     - yaml
     - free
     - vector
     - unordered-containers
-    - text
-    - bytestring
-    - parsec
     - aeson
     - directory
-    - fp2023
     - hspec
