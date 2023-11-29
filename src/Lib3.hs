@@ -81,23 +81,6 @@ executeSql sql = do
       tableContents <- loadFile
       let generatedDatabase = yamlToDatabase tableContents
       case statement of
-        {- LoadDatabase -> do
-          let result = executeStatement statement (unDatabase generatedDatabase) (show currentTime)
-          return $ case result of
-            Left err -> Left $ databaseToYaml generatedDatabase ++ "\n" ++ err
-            Right df -> Right df
-        SaveDatabase -> do
-          let result = executeStatement statement (unDatabase generatedDatabase) (show currentTime)
-          saveFile (databaseToYaml generatedDatabase)
-          deleteFile
-          renameFile
-          return $ case result of
-            Left err -> Left err
-            Right df -> Right df -}
-        Insert tableName values -> do
-          return $ Left "Insert statement not supported"
-        Delete tableName conditions -> do
-          return $ Left "Delete statement not supported"
         Update tableName values conditions -> do
           let existingTable = maybeTableToEither (lookup tableName (getTables generatedDatabase))
           case existingTable of
@@ -106,13 +89,30 @@ executeSql sql = do
               let updatedRows = updateRows values df (fromJust conditions) (getRows df)
               case updatedRows of
                 Left err -> return $ Left err
-                Right updatedRows -> 
+                Right updatedRows ->
                   let updatedDatabase = updateDatabaseWithDataFrame generatedDatabase (tableName, DataFrame (getColumns df) updatedRows)
                   in do
                   saveFile (databaseToYaml updatedDatabase)
                   renameFile
                   copyFile
                   return $ Right $ DataFrame (getColumns df) updatedRows
+        Insert tableName values -> do
+          let existingTable = maybeTableToEither (lookup tableName (getTables generatedDatabase))
+          case existingTable of
+            Left _ -> return $ Left $ "Table not found: " ++ tableName
+            Right df -> do
+              let insertedRow = insertRow values df
+              case insertedRow of
+                Left err -> return $ Left err
+                Right insertedRow ->
+                  let updatedDatabase = updateDatabaseWithDataFrame generatedDatabase (tableName, DataFrame (getColumns df) (getRows df ++ [insertedRow]))
+                  in do
+                  saveFile (databaseToYaml updatedDatabase)
+                  renameFile
+                  copyFile
+                  return $ Right $ DataFrame (getColumns df) (getRows df ++ [insertedRow])
+        Delete tableName conditions -> do
+          return $ Left "Delete statement not supported"
 
               -- return $ Left $ "Update statement not supported" ++ "[" ++ intercalate ", " (map show updatedRows) ++ "]"
         {- Update tableName values conditions -> do
@@ -173,8 +173,8 @@ getColumnIndex columnName df = findIndex (\(Column name _) -> name == columnName
 
 replaceValueByIndex :: Int -> DataFrame.Value -> Row -> Either ErrorMessage Row
 replaceValueByIndex index value row
-  | index < 0 || index >= length row = Left "Index out of bounds"
-  | not (compatibleTypes (row !! index) value) = Left "Incompatible value types"
+  | index < 0 || index >= length row = Left $ "Index out of bounds: " ++ show index
+  | not (compatibleTypes (row !! index) value) = Left $ "Incompatible value types: " ++ show (row !! index) ++ " " ++ show value
   | otherwise = Right (take index row ++ [value] ++ drop (index + 1) row)
 
 -- Function to check if two values have compatible types
@@ -182,9 +182,29 @@ compatibleTypes :: DataFrame.Value -> DataFrame.Value -> Bool
 compatibleTypes (IntegerValue _) (IntegerValue _) = True
 compatibleTypes (StringValue _) (StringValue _) = True
 compatibleTypes (BoolValue _) (BoolValue _) = True
-compatibleTypes NullValue NullValue = True
+compatibleTypes NullValue _ = True
 compatibleTypes _ _ = False
 
+getValueType :: DataFrame.Value -> ColumnType
+getValueType (IntegerValue _) = IntegerType
+getValueType (StringValue _) = StringType
+getValueType (BoolValue _) = BoolType
+getValueType NullValue = error "NullValue has no type"
+
+
+
+-- TODO Implement INSERT statement
+insertRow :: [(String, DataFrame.Value)] -> DataFrame -> Either ErrorMessage Row
+insertRow values df = do
+  let newRow = replicate (length (getColumns df)) NullValue
+  updateRow values df newRow
+
+
+getColumnsListLength :: [DataFrame.Column] -> Int
+getColumnsListLength = foldr (\ x -> (+) 1) 0
+
+getRowsListLength :: [Row] -> Int
+getRowsListLength = foldr (\ x -> (+) 1) 0
 
 
 -- TODO Convert Database to Yaml string
