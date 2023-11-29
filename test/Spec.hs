@@ -10,7 +10,7 @@ import InMemoryTables qualified as DataFrame
 import Lib1
 import Lib2
 import Lib3
-import System.Directory (doesFileExist, removeFile, renameFile)
+import System.Directory (doesFileExist, removeFile, renameFile, copyFile)
 import System.IO (IOMode (ReadMode), hClose, withFile)
 import Test.Hspec
 
@@ -72,7 +72,7 @@ main = hspec $ do
     it "Handles update" $ do
       Lib2.parseStatement "update employees set id = 6 name = \"Ka\" surname = \"Mi\" where name = \"Vi\"" "No current time." `shouldBe` Right (Update "employees" [("id", IntegerValue 6), ("name", StringValue "Ka"), ("surname", StringValue "Mi")] (Just [Operator "name" "=" (StringValue "Vi")]))
     it "Handles insert" $ do
-      Lib2.parseStatement "INSERT INTO employees (id, name, surname) VALUES (5, \"Alice\", \"Johnson\")" "No current time."  `shouldSatisfy` isRight
+      Lib2.parseStatement "INSERT INTO employees (id, name, surname) VALUES (5, \"Alice\", \"Johnson\")" "No current time."  `shouldBe` Right (Insert "employees" [("id", IntegerValue 5), ("name", StringValue "Alice"), ("surname", StringValue "Johnson")])
     it "Handles delete" $ do
       Lib2.parseStatement "DELETE FROM employees WHERE id = 5" "No current time." `shouldSatisfy` isRight
   describe "Lib2.executeStatement" $ do
@@ -111,11 +111,11 @@ main = hspec $ do
       result
         `shouldBe` Right
           ( DataFrame
-              [Column "employees.id" IntegerType, Column "employees.name" StringType, Column "employees.surname" StringType, Column "employeesSalary.salary" StringType]
-              [ [IntegerValue 1, StringValue "Vi", StringValue "Po", StringValue "900"],
-                [IntegerValue 2, StringValue "Ed", StringValue "Dl", StringValue "300"],
-                [IntegerValue 3, StringValue "Hu", StringValue "Vi", StringValue "400"],
-                [IntegerValue 4, StringValue "Pa", StringValue "Dl", StringValue "1000"]
+              [Column "employees.id" IntegerType, Column "employees.name" StringType, Column "employees.surname" StringType, Column "employeesSalary.salary" IntegerType]
+              [ [IntegerValue 1, StringValue "Vi", StringValue "Po", IntegerValue 900],
+                [IntegerValue 2, StringValue "Ed", StringValue "Dl", IntegerValue 300],
+                [IntegerValue 3, StringValue "Hu", StringValue "Vi", IntegerValue 400],
+                [IntegerValue 4, StringValue "Pa", StringValue "Dl", IntegerValue 1000]
               ]
           )
     it "table with now() in columns" $ do
@@ -144,6 +144,39 @@ main = hspec $ do
                 [IntegerValue 4, StringValue "The Shining", StringValue "Stephen King", IntegerValue 1977, BoolValue True, StringValue "2023-11-18 15:43:02.232016126 UTC"]
               ]
           )
+    it "update table with update statement " $ do
+      result <- runExecuteIO $ Lib3.executeSql "update employees set id = 6 name = \"Ka\" surname = \"Mi\" where name = \"Vi\";"
+      result `shouldBe` Right 
+        ( DataFrame 
+          [Column "id" IntegerType, Column "name" StringType, Column "surname" StringType] 
+          [ [IntegerValue 6, StringValue "Ka", StringValue "Mi"], 
+            [IntegerValue 2, StringValue "Ed", StringValue "Dl"], 
+            [IntegerValue 3, StringValue "Hu", StringValue "Vi"], 
+            [IntegerValue 4, StringValue "Pa", StringValue "Dl"]
+          ]
+        )
+    it "insert into table with INSERT statement " $ do
+      result <- runExecuteIO $ Lib3.executeSql "INSERT INTO employees (id, name, surname) VALUES (5, \"Al\", \"Jo\");"
+      result `shouldBe` Right 
+        ( DataFrame 
+          [Column "id" IntegerType, Column "name" StringType, Column "surname" StringType] 
+          [ [IntegerValue 1, StringValue "Vi", StringValue "Po"], 
+            [IntegerValue 2, StringValue "Ed", StringValue "Dl"], 
+            [IntegerValue 3, StringValue "Hu", StringValue "Vi"], 
+            [IntegerValue 4, StringValue "Pa", StringValue "Dl"],
+            [IntegerValue 5, StringValue "Al", StringValue "Jo"]
+          ]
+        )
+    it "delete from table with DELETE statement " $ do
+      result <- runExecuteIO $ Lib3.executeSql "DELETE FROM employees WHERE id = 2;"
+      result `shouldBe` Right 
+        ( DataFrame 
+          [Column "id" IntegerType, Column "name" StringType, Column "surname" StringType] 
+          [ [IntegerValue 1, StringValue "Vi", StringValue "Po"],
+            [IntegerValue 3, StringValue "Hu", StringValue "Vi"],
+            [IntegerValue 4, StringValue "Pa", StringValue "Dl"]
+          ]
+        )
 
 runExecuteIO :: Lib3.Execution r -> IO r
 runExecuteIO (Pure r) = return r
@@ -165,13 +198,16 @@ runExecuteIO (Free step) = do
       withFile finalPath ReadMode $ \handle -> hClose handle
       return $ next fileContents
     runStep (Lib3.SaveFile fileContents next) = do
-      writeFile "db/tablesTestSave.yaml" fileContents
+      writeFile "src/db/tablesTestSave.yaml" fileContents
       return next
     runStep (Lib3.DeleteFile next) = do
-      removeFile "db/tablesTestSave.yaml"
+      removeFile "src/db/tablesTestSave.yaml"
       return next
     runStep (Lib3.RenameFile next) = do
-      renameFile "db/tablesTestSave.yaml" "db/tablesTestSave.yaml"
+      renameFile "src/db/tablesTestSave.yaml" "src/db/tablesTestSave.yaml"
+      return next
+    runStep (Lib3.CopyFile next) = do
+      copyFile "src/db/tablesTest.yaml" "src/db/tablesTestSave.yaml"
       return next
 
 fixedUTCTime :: UTCTime
