@@ -72,9 +72,9 @@ main = hspec $ do
     it "Handles update" $ do
       Lib2.parseStatement "update employees set id = 6 name = \"Ka\" surname = \"Mi\" where name = \"Vi\"" "No current time. You have to run \"stack run fp2023-manipulate\" to use the agregate function \"now()\"." `shouldBe` Right (Update "employees" [("id", IntegerValue 6), ("name", StringValue "Ka"), ("surname", StringValue "Mi")] (Just [Operator "name" "=" (StringValue "Vi")]))
     it "Handles insert" $ do
-      Lib2.parseStatement "INSERT INTO employees (id, name, surname) VALUES (5, 'Alice', 'Johnson')" "No current time. You have to run \"stack run fp2023-manipulate\" to use the agregate function \"now()\"." `shouldSatisfy` isLeft
-  -- it "Handles delete" $ do
-  --   Lib2.parseStatement "delete from employees where " `shouldSatisfy` isRight
+      Lib2.parseStatement "INSERT INTO employees (id, name, surname) VALUES (5, \"Alice\", \"Johnson\")" `shouldSatisfy` isRight
+    it "Handles delete" $ do
+      Lib2.parseStatement "DELETE FROM employees WHERE id = 5" `shouldSatisfy` isRight
   describe "Lib2.executeStatement" $ do
     it "Returns the SHOW TABLES dataframe correctly" $ do
       Lib2.executeStatement ShowTables DataFrame.database "No current time. You have to run \"stack run fp2023-manipulate\" to use the agregate function \"now()\"." `shouldBe` Right (DataFrame [Column "tables" StringType] [[StringValue "employees"], [StringValue "employeesSalary"], [StringValue "invalid1"], [StringValue "invalid2"], [StringValue "long_strings"], [StringValue "flags"]])

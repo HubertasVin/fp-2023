@@ -88,12 +88,22 @@ parseStatement input getTime
                   (conditions, _) <- parseWhereConditions remaining getTime
                   Right (Update table values (Just conditions))
                 _ -> Left "Invalid UPDATE statement"
-            ["insert", "into", tableName, "values", values] ->
-              Right (Insert tableName (splitStringIntoWords values))
-            ["delete", "from", tableName, "where", conditions] -> do
-              (parsedConditions, _) <- parseWhereConditions [conditions] getTime
-              Right (Delete tableName (Just parsedConditions))
+            "insert" : "into" : tableName : rest ->
+              case break (== "values") rest of
+                (_, "values" : values) ->
+                  let valueList = splitCommaSeparated (unwords values)
+                  in Right (Insert tableName valueList)
+                _ -> Left "Invalid INSERT statement"
+            "delete" : "from" : tableName : rest ->
+              case break (== "where") rest of
+                (_, "where" : conditions) -> do
+                  (parsedConditions, _) <- parseWhereConditions conditions
+                  Right (Delete tableName (Just parsedConditions))
+                _ -> Left "Invalid DELETE statement"
             _ -> Left "Not supported statement"
+
+
+
 
 splitCommaSeparated :: String -> [String]
 splitCommaSeparated str = map trimWhitespace $ splitOnComma str
@@ -118,7 +128,7 @@ replaceKeywordsToLower = map replaceKeyword
       | otherwise = keyword
 
 keywordsList :: [String]
-keywordsList = ["show", "table", "tables", "select", "from", "where", "and", "or", "not", "now", "min", "sum", "update", "set", "insert", "into", "values"]
+keywordsList = ["show", "table", "tables", "select", "from", "where", "and", "or", "not", "now", "min", "sum", "update", "set", "insert", "into", "values", "delete"]
 
 toLowerPrefix :: String -> String -> Bool
 toLowerPrefix prefix str = map toLower prefix `isPrefixOf` map toLower str

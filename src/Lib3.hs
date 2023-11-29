@@ -40,7 +40,6 @@ data ExecutionAlgebra next
   | DeleteFile next
   | RenameFile next
   | GetTime (UTCTime -> next)
-  -- feel free to add more constructors here
   deriving (Functor)
 
 data YamlData = YamlData { tables :: [YamlTable] } deriving (Show)
@@ -69,10 +68,10 @@ getTime = liftF $ GetTime id
 executeSql :: String -> Execution (Either ErrorMessage DataFrame)
 executeSql sql = do
   currentTime <- getTime
-  case parseStatement sql (show currentTime) of
+  case parseStatement sql of
     Left err -> return $ Left err
     Right statement -> do
-      employeeTableContents <- loadFile
+      employeeTableContents <- loadFile "db/tables.yaml"
       let generatedDatabase = yamlToDatabase employeeTableContents
       case statement of
         LoadDatabase -> do
@@ -88,8 +87,23 @@ executeSql sql = do
           return $ case result of
             Left err -> Left err
             Right df -> Right df
+        Insert tableName values -> do
+          let result = executeStatement statement (unDatabase generatedDatabase)
+          return $ case result of
+            Left err -> Left err
+            Right df -> Right df
+        Delete tableName conditions -> do
+          let result = executeStatement statement (unDatabase generatedDatabase)
+          return $ case result of
+            Left err -> Left err
+            Right df -> Right df
+        Update table values conditions -> do
+          let result = executeStatement statement (unDatabase generatedDatabase)
+          return $ case result of
+            Left err -> Left err
+            Right df -> Right df
         _ -> do
-          let result = executeStatement statement (unDatabase generatedDatabase) (show currentTime)
+          let result = executeStatement statement (unDatabase generatedDatabase)
           return $ case result of
             Left err -> Left err
             Right df -> Right df
