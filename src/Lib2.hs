@@ -8,6 +8,10 @@ module Lib2
   ( parseStatement,
     getColumnName,
     executeStatement,
+    getColumns,
+    getRows,
+    evalCondition,
+    maybeTableToEither,
     Operator (..),
     ParsedStatement (..),
   )
@@ -91,8 +95,8 @@ parseStatement input getTime
                         _ -> Right (Select splitCols tableNameList Nothing Nothing)
                 _ -> Left "Invalid SELECT statement"
             "update" : table : rest ->
-              case dropWhile (/= "set") rest of
-                "set" : assignments -> do
+              case span (/= "set") rest of
+                (_, "set" : assignments) -> do
                   (values, remaining) <- parseUpdateAssignments assignments
                   (conditions, _) <- parseWhereConditions remaining getTime
                   Right (Update table values (Just conditions))
@@ -167,7 +171,7 @@ parseValue s
             "true" -> Right (BoolValue True)
             "false" -> Right (BoolValue False)
             "null" -> Right NullValue
-            _ -> Left $ "Invalid value" ++ s
+            _ -> Left $ "Invalid value: " ++ s
 
 parseUpdateAssignments :: [String] -> Either ErrorMessage ([(String, Value)], [String])
 parseUpdateAssignments [] = Left "Invalid UPDATE statement"
@@ -219,7 +223,6 @@ parseWhereConditions (colName : op : value : rest) getTime
       "NULL" -> parseOperator col "/=" NullValue remaining
       _ | isLikelyColumnName val -> parseOperator col "/=" (StringValue val) remaining
         | otherwise -> Left "Invalid value for inequality operator"
-
 parseWhereConditions _ _ = Right ([], [])
 
 
@@ -313,21 +316,6 @@ dataframeToString df =
       )
       (getRows df)
 
-updateRows :: [(String, Value)] -> Maybe [Operator] -> [Row] -> [Row]
-updateRows _ _ [] = []
-updateRows values maybeConditions (row : rows) =
-  let existingTable = DataFrame (getColumns existingTable) [row]
-   in if all (\(Operator colName op val) -> evalCondition colName op val existingTable row) (fromMaybe [] maybeConditions)
-        then updateRow values existingTable row : updateRows values maybeConditions rows
-        else row : updateRows values maybeConditions rows
-
-updateRow :: [(String, Value)] -> DataFrame -> Row -> Row
-updateRow [] _ row = row
-updateRow ((colName, newValue) : rest) existingTable row =
-  case findIndex (\(Column name _) -> name == colName) (getColumns existingTable) of
-    Just index -> updateRow rest existingTable (take index row ++ [newValue] ++ drop (index + 1) row)
-    Nothing -> updateRow rest existingTable row
-
 evalConditionOnRow :: [Operator] -> DataFrame -> Row -> Bool
 evalConditionOnRow conditions df row = all (\cond -> evalConditionOnRow' cond df row) conditions
 
@@ -415,7 +403,6 @@ selectRow :: DataFrame -> [Column] -> Row -> Row
 selectRow df selectedCols row = map (\col -> row !! columnIndex df col) selectedCols
 
 evalCondition :: String -> String -> Value -> DataFrame -> Row -> Bool
--- evalCondition "and" colName val df row = any (\cond -> evalCondition cond df row) conditions
 evalCondition colName "=" val df row =
   case val of
     StringValue otherColName
