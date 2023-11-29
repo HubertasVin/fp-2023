@@ -17,12 +17,12 @@
     - name: id
       type: IntegerType
     - name: salary
-      type: StringType
+      type: IntegerType
   rows:
-    - [1, "900"]
-    - [2, "300"]
-    - [3, "400"]
-    - [4, "1000"]
+    - [1, 900]
+    - [2, 300]
+    - [3, 400]
+    - [4, 1000]
 
 - table: flags
   columns:

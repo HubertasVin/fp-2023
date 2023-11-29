@@ -112,17 +112,20 @@ executeSql sql = do
                   copyFile
                   return $ Right $ DataFrame (getColumns df) (getRows df ++ [insertedRow])
         Delete tableName conditions -> do
-          return $ Left "Delete statement not supported"
-
-              -- return $ Left $ "Update statement not supported" ++ "[" ++ intercalate ", " (map show updatedRows) ++ "]"
-        {- Update tableName values conditions -> do
-          return $ Left $ "hello"
           let existingTable = maybeTableToEither (lookup tableName (getTables generatedDatabase))
-          let updatedRows = updateRows values conditions (getRows (fromJust (lookup tableName (unDatabase generatedDatabase))))
-          let result = executeStatement statement (unDatabase generatedDatabase) (show currentTime)
-          return $ case existingTable of
-            Left err -> Left $ "Table not found: " ++ tableName
-            Right df -> Left $ show $ DataFrame (getColumns df) updatedRows -}
+          case existingTable of
+            Left _ -> return $ Left $ "Table not found: " ++ tableName
+            Right df -> do
+              let updatedRows = removeRows (fromJust conditions) df
+              case updatedRows of
+                Left err -> return $ Left err
+                Right updatedRows ->
+                  let updatedDatabase = updateDatabaseWithDataFrame generatedDatabase (tableName, DataFrame (getColumns df) (getRows updatedRows))
+                  in do
+                  saveFile (databaseToYaml updatedDatabase)
+                  renameFile
+                  copyFile
+                  return $ Right $ DataFrame (getColumns df) (getRows updatedRows)
         _ -> do
           let result = executeStatement statement (unDatabase generatedDatabase) (show currentTime)
           return $ case result of
@@ -205,6 +208,22 @@ getColumnsListLength = foldr (\ x -> (+) 1) 0
 
 getRowsListLength :: [Row] -> Int
 getRowsListLength = foldr (\ x -> (+) 1) 0
+
+
+-- TODO Implement DELETE statement
+removeRows :: [Operator] -> DataFrame -> Either ErrorMessage DataFrame
+removeRows conditions df = do
+  updatedRows <- removeRows' (head conditions) df (getRows df)
+  return $ DataFrame (getColumns df) updatedRows
+
+removeRows' :: Operator -> DataFrame -> [Row] -> Either ErrorMessage [Row]
+removeRows' _ _ [] = Right []
+removeRows' (Operator columnName operator value) df (row : rows) =
+  if evalCondition columnName operator value df row
+    then removeRows' (Operator columnName operator value) df rows
+    else do
+      updatedRows <- removeRows' (Operator columnName operator value) df rows
+      return $ row : updatedRows
 
 
 -- TODO Convert Database to Yaml string
