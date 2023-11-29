@@ -68,10 +68,10 @@ getTime = liftF $ GetTime id
 executeSql :: String -> Execution (Either ErrorMessage DataFrame)
 executeSql sql = do
   currentTime <- getTime
-  case parseStatement sql of
+  case parseStatement sql (show currentTime) of
     Left err -> return $ Left err
     Right statement -> do
-      employeeTableContents <- loadFile "db/tables.yaml"
+      employeeTableContents <- loadFile
       let generatedDatabase = yamlToDatabase employeeTableContents
       case statement of
         LoadDatabase -> do
@@ -79,7 +79,7 @@ executeSql sql = do
           return $ case result of
             Left err -> Left $ databaseToYaml generatedDatabase ++ "\n" ++ err
             Right df -> Right df
-        SaveDatabase path -> do
+        SaveDatabase -> do
           let result = executeStatement statement (unDatabase generatedDatabase) (show currentTime)
           saveFile (databaseToYaml generatedDatabase)
           deleteFile
@@ -88,22 +88,22 @@ executeSql sql = do
             Left err -> Left err
             Right df -> Right df
         Insert tableName values -> do
-          let result = executeStatement statement (unDatabase generatedDatabase)
+          let result = executeStatement statement (unDatabase generatedDatabase) (show currentTime)
           return $ case result of
             Left err -> Left err
             Right df -> Right df
         Delete tableName conditions -> do
-          let result = executeStatement statement (unDatabase generatedDatabase)
+          let result = executeStatement statement (unDatabase generatedDatabase) (show currentTime)
           return $ case result of
             Left err -> Left err
             Right df -> Right df
         Update table values conditions -> do
-          let result = executeStatement statement (unDatabase generatedDatabase)
+          let result = executeStatement statement (unDatabase generatedDatabase) (show currentTime)
           return $ case result of
             Left err -> Left err
             Right df -> Right df
         _ -> do
-          let result = executeStatement statement (unDatabase generatedDatabase)
+          let result = executeStatement statement (unDatabase generatedDatabase) (show currentTime)
           return $ case result of
             Left err -> Left err
             Right df -> Right df

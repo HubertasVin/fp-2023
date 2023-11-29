@@ -35,7 +35,7 @@ data ParsedStatement
   | ShowTable TableName
   | Select [String] [TableName] (Maybe [Operator]) (Maybe String)
   | LoadDatabase
-  | SaveDatabase FilePath
+  | SaveDatabase
   | Update TableName [(String, Value)] (Maybe [Operator])
   | Insert TableName [String]
   | Delete TableName (Maybe [Operator])
@@ -97,7 +97,7 @@ parseStatement input getTime
             "delete" : "from" : tableName : rest ->
               case break (== "where") rest of
                 (_, "where" : conditions) -> do
-                  (parsedConditions, _) <- parseWhereConditions conditions
+                  (parsedConditions, _) <- parseWhereConditions conditions getTime
                   Right (Delete tableName (Just parsedConditions))
                 _ -> Left "Invalid DELETE statement"
             _ -> Left "Not supported statement"
