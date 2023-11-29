@@ -37,12 +37,21 @@ data ParsedStatement
   | LoadDatabase
   | SaveDatabase
   | Update TableName [(String, Value)] (Maybe [Operator])
-  | Insert TableName [String]
+  | Insert TableName [(String, Value)]
   | Delete TableName (Maybe [Operator])
   | Now [String] TableName (Maybe [Operator])
   | ParsedStatement
   | Where [Operator]
   deriving (Show, Eq)
+
+-- instance Show Value where
+--   show (StringValue s) = s
+--   show (IntegerValue i) = show i
+
+-- instance Eq Value where
+--   (StringValue s1) == (StringValue s2) = s1 == s2
+--   (IntegerValue i1) == (IntegerValue i2) = i1 == i2
+--   _ == _ = False
 
 instance Ord Value where
   compare (StringValue s1) (StringValue s2) = compare s1 s2
@@ -90,9 +99,11 @@ parseStatement input getTime
                 _ -> Left "Invalid UPDATE statement"
             "insert" : "into" : tableName : rest ->
               case break (== "values") rest of
-                (_, "values" : values) ->
+                (columnNames, "values" : values) -> do
                   let valueList = splitCommaSeparated (unwords values)
-                  in Right (Insert tableName valueList)
+                      colNameList = splitCommaSeparated (unwords columnNames)
+                      assignmentValues = (combineColumnNamesAndValues colNameList valueList)
+                  Right (Insert tableName assignmentValues)
                 _ -> Left "Invalid INSERT statement"
             "delete" : "from" : tableName : rest ->
               case break (== "where") rest of
@@ -103,6 +114,18 @@ parseStatement input getTime
             _ -> Left "Not supported statement"
 
 
+
+
+combineColumnNamesAndValues :: [String] -> [String] -> [(String, Value)]
+combineColumnNamesAndValues [] [] = []
+combineColumnNamesAndValues (colName : colNames) (value : values) =
+  case parseValue (removeBracket value) of
+    Right v -> (removeBracket colName, v) : combineColumnNamesAndValues colNames values
+    Left errMsg -> error $ "Invalid value: " ++ value ++ " " ++ errMsg
+combineColumnNamesAndValues _ _ = [] -- Handle the case where the input lists have different lengths
+
+removeBracket :: String -> String
+removeBracket = filter (\c -> c /= '(' && c /= ')')
 
 
 splitCommaSeparated :: String -> [String]
@@ -162,7 +185,6 @@ parseWhereConditions ("and" : rest) getTime
   | otherwise = do
       (operators, remaining) <- parseWhereConditions rest getTime
       Right (operators, remaining)
-
 parseWhereConditions (colName : op : value : rest) getTime
   | not (null rest) && head rest /= "and" = Left "Invalid WHERE statement"
   | op `notElem` ["=", "/=", "<>", "<", ">", "<=", ">="] = Left "Invalid operator"
@@ -259,13 +281,13 @@ executeStatement (Select columnNames tableNames maybeOperator maybeJoinCondition
               | otherwise = map (\row -> map (row !!) selectedIndices) filteredRows
         Right $ DataFrame selectedCols selectedRows
       Nothing -> Left "Table(-s) not found"
-executeStatement (Update tableName values maybeConditions) database getTime = do
+{- executeStatement (Update tableName values maybeConditions) database getTime = do
   existingTable <- maybeTableToEither (lookup tableName database)
   let updatedRows = updateRows values maybeConditions (getRows existingTable)
   Right $ DataFrame (getColumns existingTable) updatedRows
 executeStatement (Insert tableName values) database getTime = do
   existingTable <- maybeTableToEither (lookup tableName database)
-  let newRows = map (\row -> row ++ map StringValue values) (getRows existingTable)
+  let newRows = map (\row -> row ++ map (StringValue . snd) values) (getRows existingTable)
   Right $ DataFrame (getColumns existingTable) newRows
 executeStatement (Delete tableName maybeConditions) database getTime = do
   existingTable <- maybeTableToEither (lookup tableName database)
@@ -273,7 +295,7 @@ executeStatement (Delete tableName maybeConditions) database getTime = do
         Just conditions -> filter (evalConditionOnRow conditions existingTable) (getRows existingTable)
         Nothing -> []
   let remainingRows = filter (`notElem` deletedRows) (getRows existingTable)
-  Right $ DataFrame (getColumns existingTable) remainingRows
+  Right $ DataFrame (getColumns existingTable) remainingRows -}
 executeStatement _ _ _ = Left "Not implemented"
 
 dataframeToString :: DataFrame -> String
