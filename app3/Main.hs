@@ -105,16 +105,6 @@ runExecuteIO (Free step) = do
             | otherwise = error $ "File not found: " ++ path
       writeFile finalPath fileContents
       return next
-    runStep (Lib3.DeleteFile next) = do
-      let path = "db/tablesTemp.yaml"
-      exists <- doesFileExist path
-      exists2 <- doesFileExist $ "src/" ++ path
-      let finalPath
-            | exists = path
-            | exists2 = "src/" ++ path
-            | otherwise = error $ "File not found: " ++ path
-      removeFile "db/tablesTemp.yaml"
-      return next
     runStep (Lib3.RenameFile next) = do
       let pathSrc = "db/tablesTemp.yaml"
       let pathDst = "db/tables.yaml"

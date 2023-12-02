@@ -44,6 +44,7 @@ data ParsedStatement
   | Insert TableName [(String, Value)]
   | Delete TableName (Maybe [Operator])
   | Now [String] TableName (Maybe [Operator])
+  | LoadFileContent
   | ParsedStatement
   | Where [Operator]
   deriving (Show, Eq)

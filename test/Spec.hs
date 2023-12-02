@@ -10,6 +10,7 @@ import InMemoryTables qualified as DataFrame
 import Lib1
 import Lib2
 import Lib3
+import Lib3 (Database (..))
 import System.Directory (doesFileExist, removeFile, renameFile, copyFile)
 import System.IO (IOMode (ReadMode), hClose, withFile)
 import Test.Hspec
@@ -103,9 +104,9 @@ main = hspec $ do
     it "Returns a DataFrame with SELECT with WHERE with multiple AND statements" $ do
       Lib2.executeStatement (Select ["*"] ["employees"] (Just [Operator "id" ">" (IntegerValue 1), Operator "surname" "=" (StringValue "Dl"), Operator "name" "=" (StringValue "Ed")]) Nothing) DataFrame.database "No current time." `shouldBe` Right (DataFrame [Column "id" IntegerType, Column "name" StringType, Column "surname" StringType] [[IntegerValue 2, StringValue "Ed", StringValue "Dl"]])
   describe "Testing Lib3" $ do
-    --   it "Testing random functions in Lib3" $ do
-    --     result <- runExecuteIO (liftF (Lib3.GetTime id) :: Execution UTCTime)
-    --     show result `shouldBe` "fdsa"
+
+    it "Correctly serializing a yaml database" $ do
+      yamlToDatabase databaseContent `shouldBe` Database {unDatabase = [("employees",DataFrame [Column "id" IntegerType,Column "name" StringType,Column "surname" StringType] [[IntegerValue 1,StringValue "Vi",StringValue "Po"],[IntegerValue 2,StringValue "Ed",StringValue "Dl"],[IntegerValue 3,StringValue "Hu",StringValue "Vi"],[IntegerValue 4,StringValue "Pa",StringValue "Dl"]]),("employeesSalary",DataFrame [Column "id" IntegerType,Column "salary" IntegerType] [[IntegerValue 1,IntegerValue 900],[IntegerValue 2,IntegerValue 300],[IntegerValue 3,IntegerValue 400],[IntegerValue 4,IntegerValue 1000]]),("flags",DataFrame [Column "flag" StringType,Column "value" BoolType] [[StringValue "a",BoolValue True],[StringValue "b",BoolValue True],[StringValue "b",NullValue],[StringValue "b",BoolValue False]]),("specimen",DataFrame [Column "isbn" IntegerType,Column "title" StringType,Column "author" StringType,Column "year" IntegerType,Column "taken" BoolType,Column "time_taken" StringType] [[IntegerValue 1,StringValue "The Hobbit (The Lord of the Rings, #0)",StringValue "J. R. R. Tolkien",IntegerValue 1937,BoolValue True,StringValue "2023-11-20 13:09:01.378811888 UTC"],[IntegerValue 2,StringValue "The Fellowship of the Ring (The Lord of the Rings, #1)",StringValue "J. R. R. Tolkien",IntegerValue 1954,BoolValue False,NullValue],[IntegerValue 3,StringValue "Pet Sematary",StringValue "Stephen King",IntegerValue 1983,BoolValue True,StringValue "2023-11-27 11:18:22.691749541 UTC"],[IntegerValue 4,StringValue "The Shining",StringValue "Stephen King",IntegerValue 1977,BoolValue True,StringValue "2023-11-18 15:43:02.232016126 UTC"]])]}
     it "Joining two tables" $ do
       result <- runExecuteIO $ Lib3.executeSql "select * from employees, employeesSalary where employees.id = employeesSalary.id;"
       result
@@ -146,32 +147,32 @@ main = hspec $ do
           )
     it "update table with update statement " $ do
       result <- runExecuteIO $ Lib3.executeSql "update employees set id = 6 name = \"Ka\" surname = \"Mi\" where name = \"Vi\";"
-      result `shouldBe` Right 
-        ( DataFrame 
-          [Column "id" IntegerType, Column "name" StringType, Column "surname" StringType] 
-          [ [IntegerValue 6, StringValue "Ka", StringValue "Mi"], 
-            [IntegerValue 2, StringValue "Ed", StringValue "Dl"], 
-            [IntegerValue 3, StringValue "Hu", StringValue "Vi"], 
+      result `shouldBe` Right
+        ( DataFrame
+          [Column "id" IntegerType, Column "name" StringType, Column "surname" StringType]
+          [ [IntegerValue 6, StringValue "Ka", StringValue "Mi"],
+            [IntegerValue 2, StringValue "Ed", StringValue "Dl"],
+            [IntegerValue 3, StringValue "Hu", StringValue "Vi"],
             [IntegerValue 4, StringValue "Pa", StringValue "Dl"]
           ]
         )
     it "insert into table with INSERT statement " $ do
       result <- runExecuteIO $ Lib3.executeSql "INSERT INTO employees (id, name, surname) VALUES (5, \"Al\", \"Jo\");"
-      result `shouldBe` Right 
-        ( DataFrame 
-          [Column "id" IntegerType, Column "name" StringType, Column "surname" StringType] 
-          [ [IntegerValue 1, StringValue "Vi", StringValue "Po"], 
-            [IntegerValue 2, StringValue "Ed", StringValue "Dl"], 
-            [IntegerValue 3, StringValue "Hu", StringValue "Vi"], 
+      result `shouldBe` Right
+        ( DataFrame
+          [Column "id" IntegerType, Column "name" StringType, Column "surname" StringType]
+          [ [IntegerValue 1, StringValue "Vi", StringValue "Po"],
+            [IntegerValue 2, StringValue "Ed", StringValue "Dl"],
+            [IntegerValue 3, StringValue "Hu", StringValue "Vi"],
             [IntegerValue 4, StringValue "Pa", StringValue "Dl"],
             [IntegerValue 5, StringValue "Al", StringValue "Jo"]
           ]
         )
     it "delete from table with DELETE statement " $ do
       result <- runExecuteIO $ Lib3.executeSql "DELETE FROM employees WHERE id = 2;"
-      result `shouldBe` Right 
-        ( DataFrame 
-          [Column "id" IntegerType, Column "name" StringType, Column "surname" StringType] 
+      result `shouldBe` Right
+        ( DataFrame
+          [Column "id" IntegerType, Column "name" StringType, Column "surname" StringType]
           [ [IntegerValue 1, StringValue "Vi", StringValue "Po"],
             [IntegerValue 3, StringValue "Hu", StringValue "Vi"],
             [IntegerValue 4, StringValue "Pa", StringValue "Dl"]
@@ -188,27 +189,16 @@ runExecuteIO (Free step) = do
     runStep :: Lib3.ExecutionAlgebra a -> IO a
     runStep (Lib3.GetTime next) = return fixedUTCTime >>= return . next
     runStep (Lib3.LoadFile next) = do
-      exists <- doesFileExist "db/tablesTest.yaml"
-      exists2 <- doesFileExist $ "src/" ++ "db/tablesTest.yaml"
-      let finalPath
-            | exists = "db/tablesTest.yaml"
-            | exists2 = "src/" ++ "db/tablesTest.yaml" 
-            | otherwise = error $ "File not found: " ++ "db/tablesTest.yaml"
-      fileContents <- readFile finalPath
-      withFile finalPath ReadMode $ \handle -> hClose handle
-      return $ next fileContents
-    runStep (Lib3.SaveFile fileContents next) = do
-      writeFile "src/db/tablesTestSave.yaml" fileContents
-      return next
-    runStep (Lib3.DeleteFile next) = do
-      removeFile "src/db/tablesTestSave.yaml"
+      return $ next databaseContent
+    runStep (Lib3.SaveFile _ next) = do
       return next
     runStep (Lib3.RenameFile next) = do
-      renameFile "src/db/tablesTestSave.yaml" "src/db/tablesTestSave.yaml"
       return next
     runStep (Lib3.CopyFile next) = do
-      copyFile "src/db/tablesTest.yaml" "src/db/tablesTestSave.yaml"
       return next
 
 fixedUTCTime :: UTCTime
 fixedUTCTime = UTCTime (fromGregorian 2023 11 27) (secondsToDiffTime 43200) -- 2023-11-27 12:00:00
+
+databaseContent :: String
+databaseContent = "- table: employees\n  columns:\n    - name: id\n      type: IntegerType\n    - name: name\n      type: StringType\n    - name: surname\n      type: StringType\n  rows:\n    - [1, \"Vi\", \"Po\"]\n    - [2, \"Ed\", \"Dl\"]\n    - [3, \"Hu\", \"Vi\"]\n    - [4, \"Pa\", \"Dl\"]\n\n- table: employeesSalary\n  columns:\n    - name: id\n      type: IntegerType\n    - name: salary\n      type: IntegerType\n  rows:\n    - [1, 900]\n    - [2, 300]\n    - [3, 400]\n    - [4, 1000]\n\n- table: flags\n  columns:\n    - name: flag\n      type: StringType\n    - name: value\n      type: BoolType\n  rows:\n    - [\"a\", true]\n    - [\"b\", true]\n    - [\"b\", null]\n    - [\"b\", false]\n\n- table: specimen\n  columns:\n    - name: isbn\n      type: IntegerType\n    - name: title\n      type: StringType\n    - name: author\n      type: StringType\n    - name: year\n      type: IntegerType\n    - name: taken\n      type: BoolType\n    - name: time_taken\n      type: StringType\n  rows:\n    - [1, \"The Hobbit (The Lord of the Rings, #0)\", \"J. R. R. Tolkien\", 1937, true, \"2023-11-20 13:09:01.378811888 UTC\"]\n    - [2, \"The Fellowship of the Ring (The Lord of the Rings, #1)\", \"J. R. R. Tolkien\", 1954, false, null]\n    - [3, \"Pet Sematary\", \"Stephen King\", 1983, true, \"2023-11-27 11:18:22.691749541 UTC\"]\n    - [4, \"The Shining\", \"Stephen King\", 1977, true, \"2023-11-18 15:43:02.232016126 UTC\"]"

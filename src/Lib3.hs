@@ -5,6 +5,8 @@
 module Lib3
   ( executeSql,
     getColumnName,
+    yamlToDatabase,
+    Database (..),
     Execution,
     ExecutionAlgebra (..),
   )
@@ -30,8 +32,7 @@ type TableName = String
 
 type FileContent = String
 
--- In Lib3.hs
-newtype Database = Database { unDatabase :: [(TableName, DataFrame)] }
+newtype Database = Database { unDatabase :: [(TableName, DataFrame)] } deriving (Show, Eq)
 
 type Table = (TableName, DataFrame)
 
