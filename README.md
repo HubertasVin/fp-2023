@@ -1,5 +1,23 @@
 # fp-2023
 
+SQL querie execution program in Haskell. This is a university project for Functional Programming course.
+
+## Demonstration
+Select all:
+![Select all](demonstration/selectAll.png)
+Where clause:
+![Where and](demonstration/whereAnd.png)
+Min function:
+![Min function](demonstration/min.png)
+Now function:
+![Now function](demonstration/now.png)
+Join:
+![Join](demonstration/join.png)
+Insert:
+![Insert](demonstration/insert.png)
+Update:
+![Update](demonstration/update.png)
+
 ## Setup
 1. Checkout the repository. This project uses GitHub Actions haskell workflow,
 please preserve its configuration.
